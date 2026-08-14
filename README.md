@@ -27,6 +27,8 @@ walks and the discovery journal are also stored only in the current browser.
 - time-aware mystery walks that reserve an estimated return journey
 - multi-select vibes with individually adjustable destination categories
 - focused four-step mobile setup wizard for route, vibes, filters and duration
+- five-step How Far route builder with loop, there-and-back and point-to-point options
+- miles/kilometres targets, nearby-place waypoints, mapped previews and route regeneration
 - Endless Discovery browser with category, range and sorting controls
 - on-device discovery journal and interrupted-walk resume
 - live location updates, walking routes and destination arrival checks

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wanderquest-shell-v5';
+const CACHE_NAME = 'wanderquest-shell-v6';
 const APP_SHELL = [
   './',
   './index.html',

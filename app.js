@@ -35,6 +35,8 @@ const DEFAULT_COLORS = {accent:'#d7ff4f',route:'#ff4f87'};
 const ACTIVE_QUEST_MAX_AGE = 12 * 60 * 60 * 1000;
 const WALKING_METRES_PER_MINUTE = 75;
 const ROUTE_DISTANCE_FACTOR = 1.25;
+const METRES_PER_MILE = 1609.344;
+const DISTANCE_PRESETS = [1,3,5,6,10];
 
 const discoveryPrompts = [
   "Look closely at the architecture. What specific details stand out?",
@@ -62,6 +64,7 @@ function getRandomPrompt() {
 
 const S = {
   mode: 'mystery',
+  setupMode: 'mystery',
   vibes: ['history'],
   selectedCategories: ['historic','sights'],
   minutes: 60,
@@ -97,10 +100,22 @@ const S = {
   discoveryRange: 2000,
   discoveryLimit: 8,
   installPrompt: null,
-  setupStep: 1
+  setupStep: 1,
+  distanceShape: 'loop',
+  distanceAmount: 6,
+  distanceUnit: 'mi',
+  distanceOrigin: null,
+  distancePlace: null,
+  distancePlaces: [],
+  distancePlan: null,
+  distanceSeed: 0
 };
 
 let busy = false; let DEV_MODE = false; let DEV_LOCATION = {lat:53.4084,lon:-2.9916,accuracy:25};
+let distancePreviewMap = null;
+let distancePreviewLayer = null;
+let distancePreviewMarker = null;
+let distanceGenerationController = null;
 function guarded(fn){return async(...a)=>{if(busy)return;busy=true;try{await fn(...a)}finally{busy=false}}}
 const $ = id => document.getElementById(id);
 
@@ -127,6 +142,7 @@ function applyAppearance(colors = appearanceColors(), persist = false) {
     localStorage.setItem(STORAGE_KEYS.routeColor, route);
   }
   if (S.map && routeLayer) routeLayer.setStyle({color: route});
+  if (distancePreviewMap && distancePreviewLayer) distancePreviewLayer.setStyle({color: route});
   if (S.map && S.target) targetMarker(S.target);
 }
 
@@ -217,7 +233,7 @@ loadHistory();
 
 function activeQuestSnapshot() {
   return {
-    version: 1,
+    version: 2,
     savedAt: Date.now(),
     mode: S.mode,
     vibes: S.vibes,
@@ -233,7 +249,11 @@ function activeQuestSnapshot() {
     discovered: S.discovered,
     used: Array.from(S.used),
     phase: S.phase,
-    questId: S.questId
+    questId: S.questId,
+    distanceShape: S.distanceShape,
+    distanceAmount: S.distanceAmount,
+    distanceUnit: S.distanceUnit,
+    distancePlan: S.mode === 'distance' ? S.distancePlan : null
   };
 }
 
@@ -263,10 +283,17 @@ function loadActiveQuest() {
 function showResumeOption() {
   const saved = loadActiveQuest();
   if (!saved) return;
-  $('resumeTitle').textContent = saved.mode === 'just_walk' ? 'Resume Endless Discovery' : 'Resume Mystery Walk';
+  $('resumeTitle').textContent = saved.mode === 'distance' ? 'Resume How Far? Route' : saved.mode === 'just_walk' ? 'Resume Endless Discovery' : 'Resume Mystery Walk';
   const count = Array.isArray(saved.discovered) ? saved.discovered.length : 0;
-  $('resumeMeta').textContent = `${count} ${count === 1 ? 'discovery' : 'discoveries'} · saved ${formatRelativeTime(saved.savedAt)}`;
+  $('resumeMeta').textContent = saved.mode === 'distance'&&saved.distancePlan
+    ? `${distanceShapeLabel(saved.distanceShape)} · ${formatSavedRouteDistance(saved.distancePlan.distance,saved.distanceUnit)} · saved ${formatRelativeTime(saved.savedAt)}`
+    : `${count} ${count === 1 ? 'discovery' : 'discoveries'} · saved ${formatRelativeTime(saved.savedAt)}`;
   $('resumeCard').classList.remove('hidden');
+}
+
+function formatSavedRouteDistance(metres,unit='mi') {
+  const value=metres/(unit==='mi'?METRES_PER_MILE:1000);
+  return `${value.toFixed(value<10?1:0)} ${unit}`;
 }
 
 function formatRelativeTime(timestamp) {
@@ -327,7 +354,11 @@ function savePreferences() {
       vibes:S.vibes,
       categories:S.selectedCategories,
       minutes:S.minutes,
-      terrain:S.terrain
+      terrain:S.terrain,
+      setupMode:S.setupMode,
+      distanceShape:S.distanceShape,
+      distanceAmount:S.distanceAmount,
+      distanceUnit:S.distanceUnit
     }));
   } catch (error) {}
   updateWizardSummary();
@@ -344,6 +375,10 @@ function loadPreferences() {
     S.selectedCategories = categories.length ? categories : defaultCategoryIds();
     if ([30,60,90,120].includes(Number(saved.minutes))) S.minutes = Number(saved.minutes);
     if (['paved','any'].includes(saved.terrain)) S.terrain = saved.terrain;
+    if (['mystery','distance'].includes(saved.setupMode)) S.setupMode = saved.setupMode;
+    if (['loop','outback','point'].includes(saved.distanceShape)) S.distanceShape = saved.distanceShape;
+    if (['mi','km'].includes(saved.distanceUnit)) S.distanceUnit = saved.distanceUnit;
+    if (Number.isFinite(Number(saved.distanceAmount))) S.distanceAmount = Math.min(30,Math.max(.5,Number(saved.distanceAmount)));
     S.maxStops=S.minutes<=30?3:S.minutes<=60?5:S.minutes<=90?7:9;
   } catch (error) {}
 }
@@ -392,7 +427,33 @@ document.querySelectorAll('.terrain-opts .option').forEach(button => {
   const selected = button.dataset.terrain === S.terrain;
   button.classList.toggle('selected',selected);
   button.setAttribute('aria-pressed',String(selected));
-  button.onclick=()=>{selectOption('.terrain-opts .option',button);S.terrain=button.dataset.terrain;savePreferences()};
+  button.onclick=()=>{selectOption('.terrain-opts .option',button);S.terrain=button.dataset.terrain;S.distancePlan=null;savePreferences()};
+});
+document.querySelectorAll('.journey-mode').forEach(button => {
+  const selected = button.dataset.setupMode === S.setupMode;
+  button.classList.toggle('selected',selected);
+  button.setAttribute('aria-pressed',String(selected));
+  button.onclick=()=>{
+    selectOption('.journey-mode',button);
+    S.setupMode=button.dataset.setupMode;
+    S.distancePlan=null;
+    savePreferences();
+    showWizardStep(1,false);
+  };
+});
+document.querySelectorAll('[data-distance-shape]').forEach(button => {
+  const selected = button.dataset.distanceShape === S.distanceShape;
+  button.classList.toggle('selected',selected);
+  button.setAttribute('aria-pressed',String(selected));
+  button.onclick=()=>{
+    selectOption('[data-distance-shape]',button);
+    S.distanceShape=button.dataset.distanceShape;
+    S.distancePlace=null;
+    S.distancePlaces=[];
+    S.distancePlan=null;
+    renderDistancePlaceStep();
+    savePreferences();
+  };
 });
 document.querySelectorAll('.vibe').forEach(button => button.onclick = () => {
   const vibe = button.dataset.vibe;
@@ -412,13 +473,92 @@ document.querySelectorAll('.vibe').forEach(button => button.onclick = () => {
 $('selectAllCategoriesBtn').onclick=()=>{S.selectedCategories=availableCategoryIds();renderCategoryFilters();savePreferences()};
 $('resetCategoriesBtn').onclick=()=>{S.selectedCategories=defaultCategoryIds();renderCategoryFilters();savePreferences()};
 
-const WIZARD_TITLES = ['Choose your route','Select your vibes','Refine destinations','Duration & launch'];
+const WIZARD_TITLES = {
+  mystery:['Choose your journey','Select your vibes','Refine destinations','Duration & launch'],
+  distance:['Choose your journey','Choose route shape','Set the distance','Add a discovery','Preview & launch']
+};
+
+function wizardStepCount() { return S.setupMode === 'distance' ? 5 : 4; }
 
 function durationLabel(minutes) {
-  if (minutes < 60) return `${minutes} minutes`;
-  if (minutes === 60) return '1 hour';
-  return `${minutes / 60} hours`;
+  const rounded=Math.max(1,Math.round(minutes));
+  if (rounded < 60) return `${rounded} minutes`;
+  const hours=Math.floor(rounded/60);
+  const remainder=rounded%60;
+  if(!remainder)return `${hours} ${hours===1?'hour':'hours'}`;
+  return `${hours}h ${remainder}m`;
 }
+
+function targetDistanceMetres() {
+  return S.distanceAmount * (S.distanceUnit === 'mi' ? METRES_PER_MILE : 1000);
+}
+
+function formatRouteDistance(metres) {
+  const value = metres / (S.distanceUnit === 'mi' ? METRES_PER_MILE : 1000);
+  const digits = value < 10 ? 1 : 0;
+  return `${value.toFixed(digits)} ${S.distanceUnit}`;
+}
+
+function distanceShapeLabel(shape = S.distanceShape) {
+  return {loop:'Loop',outback:'There & Back',point:'Point-to-Point'}[shape] || 'Distance route';
+}
+
+function renderDistanceControls() {
+  document.querySelectorAll('[data-distance-unit]').forEach(button => {
+    const selected = button.dataset.distanceUnit === S.distanceUnit;
+    button.classList.toggle('selected',selected);
+    button.setAttribute('aria-pressed',String(selected));
+    button.onclick=()=>{
+      const metres=targetDistanceMetres();
+      S.distanceUnit=button.dataset.distanceUnit;
+      S.distanceAmount=Number((metres/(S.distanceUnit==='mi'?METRES_PER_MILE:1000)).toFixed(1));
+      S.distancePlan=null;
+      renderDistanceControls();
+      savePreferences();
+    };
+  });
+  $('distancePresets').innerHTML=DISTANCE_PRESETS.map(value=>`<button type="button" class="distance-preset ${Math.abs(S.distanceAmount-value)<.01?'selected':''}" data-distance-value="${value}">${value}</button>`).join('');
+  document.querySelectorAll('[data-distance-value]').forEach(button=>button.onclick=()=>{
+    S.distanceAmount=Number(button.dataset.distanceValue);
+    S.distancePlan=null;
+    renderDistanceControls();
+    savePreferences();
+  });
+  $('distanceAmountInput').value=String(Number(S.distanceAmount.toFixed(1)));
+  $('distanceUnitLabel').textContent=S.distanceUnit;
+  const minutes=Math.max(1,Math.round(targetDistanceMetres()/WALKING_METRES_PER_MINUTE));
+  $('distanceEstimate').innerHTML=`Target: <b>${esc(formatRouteDistance(targetDistanceMetres()))}</b> · roughly ${esc(durationLabel(minutes))} walking time before stops.`;
+}
+
+$('distanceAmountInput').onchange=event=>{
+  const value=Math.min(30,Math.max(.5,Number(event.target.value)||.5));
+  S.distanceAmount=Math.round(value*2)/2;
+  S.distancePlan=null;
+  renderDistanceControls();
+  savePreferences();
+};
+
+function renderDistancePlaceStep() {
+  const point=S.distanceShape==='point';
+  $('distancePlaceHeading').textContent=point?'Where should we finish?':'Add somewhere interesting?';
+  $('distancePlaceCopy').textContent=point
+    ? 'Search nearby places around your target distance and choose a finish, or let WanderQuest pick a direction.'
+    : 'Search around you for a place to shape the route, or let WanderQuest choose the waypoints.';
+  $('searchDistancePlacesBtn').textContent=point?'SEARCH FOR FINISHES':'SEARCH AROUND ME';
+  $('distancePlaceList').innerHTML=S.distancePlaces.map((place,index)=>`<button type="button" class="distance-place ${S.distancePlace&&placeKey(S.distancePlace)===placeKey(place)?'selected':''}" data-distance-place="${index}"><span><b>${esc(place.name)}</b><small>${esc(categoryLabel(place))} · ${esc(compass(bearing(S.distanceOrigin||S.user||place,place)))}</small></span><span>${esc(formatRouteDistance(place.dist||dist(S.distanceOrigin||place,place)))}</span></button>`).join('');
+  document.querySelectorAll('[data-distance-place]').forEach(button=>button.onclick=()=>{
+    S.distancePlace=S.distancePlaces[Number(button.dataset.distancePlace)]||null;
+    S.distancePlan=null;
+    renderDistancePlaceStep();
+  });
+  $('clearDistancePlaceBtn').classList.toggle('hidden',!S.distancePlace);
+}
+
+$('clearDistancePlaceBtn').onclick=()=>{
+  S.distancePlace=null;
+  S.distancePlan=null;
+  renderDistancePlaceStep();
+};
 
 function updateWizardSummary() {
   const summary = $('wizardSummary');
@@ -433,21 +573,32 @@ function updateWizardSummary() {
 }
 
 function showWizardStep(step, scroll = true) {
-  S.setupStep = Math.max(1, Math.min(4, step));
-  document.querySelectorAll('[data-wizard-step]').forEach(panel => panel.classList.toggle('hidden', Number(panel.dataset.wizardStep) !== S.setupStep));
-  $('wizardStepText').textContent = `Step ${S.setupStep} of 4`;
-  $('wizardStepTitle').textContent = WIZARD_TITLES[S.setupStep - 1];
-  document.querySelectorAll('.wizard-dots i').forEach((dot, index) => dot.classList.toggle('active', index < S.setupStep));
+  const count = wizardStepCount();
+  S.setupStep = Math.max(1, Math.min(count, step));
+  document.querySelectorAll('[data-wizard-step]').forEach(panel => {
+    const flow = panel.dataset.wizardFlow;
+    const visible = Number(panel.dataset.wizardStep) === S.setupStep && (flow === 'all' || flow === S.setupMode);
+    panel.classList.toggle('hidden', !visible);
+  });
+  $('wizardStepText').textContent = `Step ${S.setupStep} of ${count}`;
+  $('wizardStepTitle').textContent = WIZARD_TITLES[S.setupMode][S.setupStep - 1];
+  $('wizardDots').innerHTML = Array.from({length:count},(_,index)=>`<i class="${index<S.setupStep?'active':''}"></i>`).join('');
   $('wizardBackBtn').classList.toggle('hidden', S.setupStep === 1);
-  $('wizardNextBtn').classList.toggle('hidden', S.setupStep === 4);
+  $('wizardNextBtn').classList.toggle('hidden', S.setupStep === count);
   updateWizardSummary();
+  if (S.setupMode === 'distance') {
+    renderDistanceControls();
+    renderDistancePlaceStep();
+    if (S.setupStep === 5) window.setTimeout(()=>generateDistanceRoute(),0);
+  }
   if (scroll) $('home').scrollTo({top:0,behavior:'auto'});
 }
 
 $('wizardBackBtn').onclick = () => showWizardStep(S.setupStep - 1);
 $('wizardNextBtn').onclick = () => {
-  if (S.setupStep === 2 && !S.vibes.length) return toast('Choose at least one vibe.');
-  if (S.setupStep === 3 && !S.selectedCategories.length) return toast('Choose at least one destination category.');
+  if (S.setupMode === 'mystery' && S.setupStep === 2 && !S.vibes.length) return toast('Choose at least one vibe.');
+  if (S.setupMode === 'mystery' && S.setupStep === 3 && !S.selectedCategories.length) return toast('Choose at least one destination category.');
+  if (S.setupMode === 'distance' && S.setupStep === 3 && targetDistanceMetres() < 500) return toast('Choose a route of at least 0.5 km.');
   showWizardStep(S.setupStep + 1);
 };
 showWizardStep(1, false);
@@ -465,6 +616,7 @@ function distLabel(){
   return `${fd(dist(S.user,S.target))} · <span class="compass-icon" style="transform:rotate(${deg}deg)">↑</span> ${compass(deg)}`;
 }
 function dist(a,b){const R=6371000,p=Math.PI/180,d1=(b.lat-a.lat)*p,d2=(b.lon-a.lon)*p,x=Math.sin(d1/2)**2+Math.cos(a.lat*p)*Math.cos(b.lat*p)*Math.sin(d2/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
+function pointFrom(origin,degrees,metres){const R=6371000,d=metres/R,b=degrees*Math.PI/180,p1=origin.lat*Math.PI/180,l1=origin.lon*Math.PI/180,p2=Math.asin(Math.sin(p1)*Math.cos(d)+Math.cos(p1)*Math.sin(d)*Math.cos(b)),l2=l1+Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(p1),Math.cos(d)-Math.sin(p1)*Math.sin(p2));return{lat:p2*180/Math.PI,lon:((l2*180/Math.PI+540)%360)-180}}
 function fd(m){return m<1000?Math.round(m)+' m away':(m/1000).toFixed(1)+' km away'}
 function esc(s=''){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 
@@ -760,30 +912,48 @@ async function geoapifySearch(p, r){
   }
 }
 
-async function fetchRoute(start, end) {
+function routingMode() { return S.terrain === 'any' ? 'hike' : 'walk'; }
+
+async function requestRouteData(waypoints,{signal,intermediateMode}={}) {
   const key = localStorage.getItem(STORAGE_KEYS.apiKey);
-  if(!key) return false;
-  const url = `https://api.geoapify.com/v1/routing?waypoints=${start.lat},${start.lon}|${end.lat},${end.lon}&mode=walk&apiKey=${encodeURIComponent(key.trim())}`;
+  if(!key) throw new Error('API key missing. Open settings to add it.');
+  if(!Array.isArray(waypoints)||waypoints.length<2)throw new Error('At least two route points are required.');
+  const params=new URLSearchParams({
+    waypoints:waypoints.map(point=>`${point.lat.toFixed(6)},${point.lon.toFixed(6)}`).join('|'),
+    mode:routingMode(),
+    type:'short',
+    apiKey:key.trim()
+  });
+  if(intermediateMode&&waypoints.length>2)params.set('intermediate_waypoint_mode',intermediateMode);
+  const res=await fetch(`https://api.geoapify.com/v1/routing?${params}`,{signal});
+  if(!res.ok)throw new Error(`Routing service could not build this route (${res.status}).`);
+  const data=await res.json();
+  const feature=data?.features?.[0];
+  if(!feature?.geometry)throw new Error('No walkable route was found for those points.');
+  const distance=Number(feature.properties?.distance);
+  const time=Number(feature.properties?.time);
+  if(!Number.isFinite(distance)||distance<=0)throw new Error('The route did not include a valid distance.');
+  feature.properties={...feature.properties,distance,time:Number.isFinite(time)?time:null};
+  return data;
+}
+
+function routeStyle() {
+  return {color:appearanceColors().route,weight:6,opacity:.8,dashArray:'1, 8',lineCap:'round'};
+}
+
+function createRouteLayer(data) { return L.geoJSON(data,{style:routeStyle()}); }
+
+async function fetchRoute(start, end) {
   if (routeRequestController) routeRequestController.abort();
   routeRequestController = new AbortController();
   const requestToken = ++routeRequestToken;
 
   try {
-    const res = await fetch(url, {signal: routeRequestController.signal});
-    if (!res.ok) return false;
-    const data = await res.json();
-    if (requestToken !== routeRequestToken || !data.features?.length) return false;
+    const data=await requestRouteData([start,end],{signal:routeRequestController.signal});
+    if (requestToken !== routeRequestToken) return false;
     const seconds = Number(data.features?.[0]?.properties?.time);
     const nextRouteMinutes = Number.isFinite(seconds) ? Math.max(1, Math.ceil(seconds / 60)) : null;
-    const nextRouteLayer = L.geoJSON(data, {
-      style: {
-        color: appearanceColors().route,
-        weight: 6,
-        opacity: 0.8,
-        dashArray: '1, 8',
-        lineCap: 'round'
-      }
-    });
+    const nextRouteLayer = createRouteLayer(data);
     nextRouteLayer.addTo(S.map);
     if (routeLayer && S.map) S.map.removeLayer(routeLayer);
     routeLayer = nextRouteLayer;
@@ -797,6 +967,162 @@ async function fetchRoute(start, end) {
     if (requestToken === routeRequestToken) routeRequestController = null;
   }
 }
+
+function routeMetrics(data) {
+  const props=data?.features?.[0]?.properties||{};
+  return {distance:Number(props.distance)||0,time:Number(props.time)||0};
+}
+
+function makeOutAndBack(data) {
+  const clone=JSON.parse(JSON.stringify(data));
+  const feature=clone.features[0];
+  const geometry=feature.geometry;
+  if(geometry.type==='LineString'){
+    geometry.type='MultiLineString';
+    geometry.coordinates=[geometry.coordinates,[...geometry.coordinates].reverse()];
+  }else if(geometry.type==='MultiLineString'){
+    const returnLines=[...geometry.coordinates].reverse().map(line=>[...line].reverse());
+    geometry.coordinates=[...geometry.coordinates,...returnLines];
+  }
+  feature.properties.distance=(Number(feature.properties.distance)||0)*2;
+  feature.properties.time=(Number(feature.properties.time)||0)*2;
+  return clone;
+}
+
+async function searchDistancePlaces() {
+  const button=$('searchDistancePlacesBtn');
+  button.disabled=true;
+  const previous=button.textContent;
+  button.textContent='SEARCHING…';
+  $('distancePlaceStatus').textContent='Getting your location and looking for suitable places…';
+  try{
+    S.distanceOrigin=await pos(0);
+    const target=targetDistanceMetres();
+    const factor=S.distanceShape==='point'?1.05:S.distanceShape==='outback'?.55:.45;
+    const radius=Math.round(Math.min(20000,Math.max(1000,target*factor)));
+    const places=await geoapifySearch(S.distanceOrigin,radius);
+    const desired=target*(S.distanceShape==='point'?.78:S.distanceShape==='outback'?.38:.3);
+    S.distancePlaces=places
+      .map(place=>({...place,dist:dist(S.distanceOrigin,place)}))
+      .filter(place=>place.dist>150)
+      .sort((a,b)=>Math.abs(a.dist-desired)-Math.abs(b.dist-desired))
+      .slice(0,8);
+    S.distancePlace=null;
+    $('distancePlaceStatus').textContent=S.distancePlaces.length
+      ? `Choose a place, or continue and let WanderQuest pick the route.`
+      : 'No matching places were found. You can still continue with generated waypoints.';
+    renderDistancePlaceStep();
+  }catch(e){
+    $('distancePlaceStatus').textContent=e.message;
+    toast(e.message);
+  }finally{
+    button.disabled=false;
+    button.textContent=previous;
+  }
+}
+
+$('searchDistancePlacesBtn').onclick=guarded(searchDistancePlaces);
+
+function distanceCandidatePoints(origin,target,seed,index) {
+  const base=(23+(seed*137.508)+(index*71))%360;
+  const anchor=S.distancePlace;
+  if(S.distanceShape==='loop'){
+    if(anchor){
+      const anchorBearing=bearing(origin,anchor);
+      const second=pointFrom(origin,anchorBearing+(index%2?115:-115),Math.max(500,target*.3));
+      return [origin,anchor,second,origin];
+    }
+    const side=target/3*(index===0?.78:1.02);
+    return [origin,pointFrom(origin,base,side),pointFrom(origin,base+65,side),origin];
+  }
+  const factor=S.distanceShape==='outback'?.4:.78;
+  const end=anchor||pointFrom(origin,base,target*factor*(index===0?.9:1.08));
+  return [origin,end];
+}
+
+async function buildDistancePlan(origin,signal) {
+  const target=targetDistanceMetres();
+  const seed=++S.distanceSeed;
+  const attempts=S.distancePlace&&S.distanceShape!=='loop'?1:2;
+  const candidates=[];
+  for(let index=0;index<attempts;index++){
+    try{
+      const points=distanceCandidatePoints(origin,target,seed,index);
+      let data=await requestRouteData(points,{signal,intermediateMode:S.distanceShape==='loop'?'pass_through':undefined});
+      if(S.distanceShape==='outback')data=makeOutAndBack(data);
+      const metrics=routeMetrics(data);
+      candidates.push({data,distance:metrics.distance,time:metrics.time,points,end:points[points.length-1],turnaround:S.distanceShape==='outback'?points[1]:null,anchor:S.distancePlace||null});
+    }catch(e){
+      if(e.name==='AbortError')throw e;
+      console.warn('Distance route candidate failed',e);
+    }
+  }
+  if(!candidates.length)throw new Error('No suitable route could be generated. Try another distance, surface or place.');
+  candidates.sort((a,b)=>Math.abs(a.distance-target)-Math.abs(b.distance-target));
+  const best=candidates[0];
+  return {...best,origin,shape:S.distanceShape,target,place:S.distancePlace?{...S.distancePlace}:null};
+}
+
+function initDistancePreviewMap(origin) {
+  if(!distancePreviewMap){
+    distancePreviewMap=L.map('distancePreviewMap',{zoomControl:false,attributionControl:true,preferCanvas:true}).setView([origin.lat,origin.lon],14);
+    L.tileLayer(tilesMystery,{maxZoom:19,attribution:'&copy; CartoDB | &copy; OpenStreetMap'}).addTo(distancePreviewMap);
+  }
+  window.setTimeout(()=>distancePreviewMap.invalidateSize(),0);
+}
+
+function previewFocusPoint(plan) {
+  if(plan.place)return plan.place;
+  if(plan.turnaround)return plan.turnaround;
+  return plan.shape==='point'?plan.points[plan.points.length-1]:null;
+}
+
+function renderDistancePreview(plan) {
+  initDistancePreviewMap(plan.origin);
+  if(distancePreviewLayer)distancePreviewMap.removeLayer(distancePreviewLayer);
+  if(distancePreviewMarker)distancePreviewMap.removeLayer(distancePreviewMarker);
+  distancePreviewLayer=createRouteLayer(plan.data).addTo(distancePreviewMap);
+  const focus=previewFocusPoint(plan);
+  if(focus)distancePreviewMarker=L.circleMarker([focus.lat,focus.lon],{radius:7,color:'#111',weight:3,fillColor:appearanceColors().accent,fillOpacity:1}).addTo(distancePreviewMap);
+  distancePreviewMap.fitBounds(distancePreviewLayer.getBounds(),{padding:[22,22]});
+  const variance=Math.round(((plan.distance-plan.target)/plan.target)*100);
+  const routeTime=durationLabel(Math.max(1,Math.round(plan.time/60)));
+  $('distancePreviewStatus').textContent=variance===0?'Right on the requested distance.':`${Math.abs(variance)}% ${variance>0?'longer':'shorter'} than requested based on available paths.`;
+  $('distanceRouteSummary').innerHTML=`
+    <div class="wizard-summary-row"><span>Shape</span><b>${esc(distanceShapeLabel(plan.shape))}</b></div>
+    <div class="wizard-summary-row"><span>Requested</span><b>${esc(formatRouteDistance(plan.target))}</b></div>
+    <div class="wizard-summary-row"><span>Mapped route</span><b>${esc(formatRouteDistance(plan.distance))}</b></div>
+    <div class="wizard-summary-row"><span>Walking time</span><b>${esc(routeTime)}</b></div>
+    <div class="wizard-summary-row"><span>${plan.place?'Via / finish':'Surface'}</span><b>${esc(plan.place?.name||(S.terrain==='paved'?'Mostly paved':'Off-road / wild'))}</b></div>`;
+  $('distanceRouteSummary').classList.remove('hidden');
+  $('regenerateDistanceBtn').classList.remove('hidden');
+  $('startDistanceBtn').classList.remove('hidden');
+}
+
+async function generateDistanceRoute(force=false) {
+  if(S.setupMode!=='distance'||S.setupStep!==5)return;
+  if(S.distancePlan&&!force){renderDistancePreview(S.distancePlan);return}
+  if(distanceGenerationController)distanceGenerationController.abort();
+  const controller=new AbortController();
+  distanceGenerationController=controller;
+  $('distancePreviewStatus').innerHTML='<span class="loader"><span class="dot"></span> Building your route…</span>';
+  $('distanceRouteSummary').classList.add('hidden');
+  $('regenerateDistanceBtn').classList.add('hidden');
+  $('startDistanceBtn').classList.add('hidden');
+  try{
+    S.distanceOrigin=await pos(0);
+    S.distancePlan=await buildDistancePlan(S.distanceOrigin,controller.signal);
+    renderDistancePreview(S.distancePlan);
+  }catch(e){
+    if(e.name==='AbortError')return;
+    $('distancePreviewStatus').innerHTML=`<span class="distance-route-error">${esc(e.message)}</span>`;
+    $('regenerateDistanceBtn').classList.remove('hidden');
+  }finally{
+    if(distanceGenerationController===controller)distanceGenerationController=null;
+  }
+}
+
+$('regenerateDistanceBtn').onclick=()=>{S.distancePlan=null;generateDistanceRoute(true)};
 
 // BREADCRUMB LOGIC
 const BREADCRUMB_RADIUS = 1500;
@@ -1223,6 +1549,127 @@ async function reroute(event){
  }
 }
 
+function distancePlanFinish(plan=S.distancePlan) {
+ if(!plan)return null;
+ return plan.shape==='point'?plan.points[plan.points.length-1]:plan.origin;
+}
+
+function setDistancePlanMarkers(plan) {
+ S.target={...distancePlanFinish(plan),name:plan.shape==='point'?(plan.place?.name||'Route finish'):'Starting point',isHome:plan.shape!=='point'};
+ if(S.targetMarker){S.targetMarker.remove();S.targetMarker=null}
+ const focus=previewFocusPoint(plan);
+ if(focus&&dist(plan.origin,focus)>30)targetMarker({...focus,name:plan.place?.name||(plan.shape==='outback'?'Turnaround point':'Route waypoint')});
+}
+
+function applyDistancePlanToMap(plan) {
+ const nextLayer=createRouteLayer(plan.data);
+ nextLayer.addTo(S.map);
+ if(routeLayer&&S.map)S.map.removeLayer(routeLayer);
+ routeLayer=nextLayer;
+ S.routeMinutes=Math.max(1,Math.ceil(plan.time/60));
+ setDistancePlanMarkers(plan);
+ S.map.fitBounds(routeLayer.getBounds(),{padding:[34,34]});
+}
+
+function renderDistanceNavigation() {
+ const plan=S.distancePlan;
+ if(!plan)return;
+ const instruction=plan.shape==='loop'
+   ? 'Follow the route line to complete the loop back to your starting point.'
+   : plan.shape==='outback'
+     ? 'Follow the line to the turnaround point, then retrace it back to your start.'
+     : `Follow the route line to ${plan.place?.name||'your finish point'}.`;
+ $('bottomCard').className='bottom-card route-plan-card';
+ $('bottomCard').innerHTML=`
+   <div class="statusline"><span>How Far? · ${esc(distanceShapeLabel(plan.shape))}</span><div class="distance">${esc(formatRouteDistance(plan.distance))}</div></div>
+   <h2 class="mystery-title">Your route is ready.</h2>
+   <p class="mystery-copy">${esc(instruction)}</p>
+   <div class="route-plan-meta"><span>~${esc(durationLabel(Math.max(1,Math.round(plan.time/60))))}</span><span>${esc(S.terrain==='paved'?'Mostly paved':'Off-road / wild')}</span>${plan.place?`<span>${esc(plan.place.name)}</span>`:''}</div>
+   <div class="actions navigation-actions distance-route-actions">
+     <button class="locate" id="distanceLocateBtn">⌖ Locate</button>
+     <button class="reroute" id="distanceRerouteBtn">↻ Re-route</button>
+     <button class="here" id="distanceFinishBtn">FINISH</button>
+   </div>`;
+ $('distanceLocateBtn').onclick=guarded(locateDistanceRoute);
+ $('distanceRerouteBtn').onclick=guarded(rerouteDistanceRoute);
+ $('distanceFinishBtn').onclick=()=>{if(confirm('Finish this route?'))finish()};
+}
+
+async function locateDistanceRoute() {
+ try{
+   S.user=await pos(0);
+   userMarker(S.user);
+   S.map.flyTo([S.user.lat,S.user.lon],Math.max(S.map.getZoom(),16),{duration:.7});
+ }catch(e){toast(e.message)}
+}
+
+async function rerouteDistanceRoute(event) {
+ const button=event?.currentTarget;
+ const previous=button?.textContent;
+ if(button){button.disabled=true;button.textContent='RE-ROUTING…'}
+ const oldPlan=S.distancePlan;
+ const controller=new AbortController();
+ try{
+   const origin=await pos(0);
+   const nextPlan=await buildDistancePlan(origin,controller.signal);
+   S.distanceOrigin=origin;
+   S.distancePlan=nextPlan;
+   S.startLoc={...origin};
+   S.user={...origin};
+   userMarker(S.user);
+   applyDistancePlanToMap(nextPlan);
+   renderDistanceNavigation();
+   saveActiveQuest();
+   toast('Distance route rebuilt from your current location.');
+ }catch(e){
+   S.distancePlan=oldPlan;
+   toast(`${e.message} Your current route is unchanged.`);
+ }finally{
+   const current=$('distanceRerouteBtn');
+   if(current){current.disabled=false;current.textContent=previous||'↻ Re-route'}
+ }
+}
+
+async function startDistanceExperience() {
+ if(!S.distancePlan)return toast('Generate a route before starting.');
+ const button=$('startDistanceBtn');
+ button.disabled=true;
+ try{
+   clearActiveQuest();
+   S.mode='distance';
+   S.setupMode='distance';
+   S.user=await pos(0);
+   if(dist(S.user,S.distancePlan.origin)>100){
+     const controller=new AbortController();
+     S.distancePlan=await buildDistancePlan(S.user,controller.signal);
+   }
+   S.distanceOrigin={...S.distancePlan.origin};
+   S.startLoc={...S.distancePlan.origin};
+   S.startedAt=Date.now();
+   S.deadline=0;
+   S.phase='distance_navigating';
+   S.questId=globalThis.crypto?.randomUUID?.()||`route-${Date.now()}`;
+   S.discovered=[];
+   $('home').classList.add('hidden');
+   $('walk').classList.remove('hidden');
+   updateWalkHeader();
+   await initMap(S.user);
+   userMarker(S.user);
+   applyDistancePlanToMap(S.distancePlan);
+   renderDistanceNavigation();
+   startLocationWatch();
+   saveActiveQuest();
+ }catch(e){
+   $('walk').classList.add('hidden');
+   $('home').classList.remove('hidden');
+   toast(e.message);
+ }finally{
+   button.disabled=false;
+ }
+}
+
+$('startDistanceBtn').onclick=guarded(startDistanceExperience);
+
 async function arrive(){
  try{
    S.user=await pos(0);
@@ -1385,13 +1832,29 @@ function finish(){
 
  const foundCount = S.discovered.filter(x => !x.givenUp).length;
 
- $('foundCount').textContent=foundCount;$('statStops').textContent=foundCount;
-
- if (S.mode === 'just_walk') {
+ if (S.mode === 'distance') {
+    $('finishTitle').textContent='Route complete. You chose the distance — and walked it.';
+    $('statStops').textContent=formatRouteDistance(S.distancePlan?.distance||0);
+    $('statStopsLabel').textContent='mapped route';
+    $('statTime').textContent=elapsedLabel();
+    $('statVibe').textContent=distanceShapeLabel();
+    $('statVibeLabel').textContent='route shape';
+    $('finishCopy').textContent='A route built from where you stood, shaped around how far you wanted to go.';
+ } else if (S.mode === 'just_walk') {
+    $('finishTitle').innerHTML='You went looking for nothing.<br>And found <span id="foundCount"></span> things.';
+    $('foundCount').textContent=foundCount;
+    $('statStops').textContent=foundCount;
+    $('statStopsLabel').textContent='discoveries';
+    $('statVibeLabel').textContent='vibe';
     $('statTime').textContent=elapsedLabel();
     $('statVibe').textContent='Just Walk';
     $('finishCopy').textContent='You followed the compass and let the streets reveal themselves to you.';
  } else {
+    $('finishTitle').innerHTML='You went looking for nothing.<br>And found <span id="foundCount"></span> things.';
+    $('foundCount').textContent=foundCount;
+    $('statStops').textContent=foundCount;
+    $('statStopsLabel').textContent='discoveries';
+    $('statVibeLabel').textContent='vibe';
     $('statTime').textContent=elapsedLabel();
     $('statVibe').textContent=selectedVibeLabel();
     $('finishCopy').textContent='The destination was never the point. You got outside, paid attention and let somewhere unexpected become part of your day.';
@@ -1485,7 +1948,10 @@ async function launchExperience(mode) {
 }
 
 function updateWalkHeader() {
-  if (S.mode === 'just_walk') {
+  if (S.mode === 'distance') {
+    $('vibeLabel').textContent='HOW FAR?';
+    $('stopCountText').textContent=`· ${distanceShapeLabel().toUpperCase()} · ${formatRouteDistance(S.distancePlan?.distance||targetDistanceMetres())}`;
+  } else if (S.mode === 'just_walk') {
     $('vibeLabel').textContent='ENDLESS';
     $('stopCountText').textContent='';
   } else {
@@ -1501,6 +1967,7 @@ async function resumeActiveQuest() {
   $('resumeBtn').disabled = true;
   try {
     S.mode = saved.mode;
+    S.setupMode = saved.mode === 'distance' ? 'distance' : 'mystery';
     const resumedVibes = Array.isArray(saved.vibes) ? saved.vibes.filter(vibe => VIBE_CONFIG[vibe]).slice(0,3) : [];
     S.vibes = resumedVibes.length ? resumedVibes : [VIBE_CONFIG[saved.vibe] ? saved.vibe : 'history'];
     const resumedAvailable = new Set(availableCategoryIds());
@@ -1508,6 +1975,12 @@ async function resumeActiveQuest() {
     S.selectedCategories = resumedCategories.length ? resumedCategories : defaultCategoryIds();
     S.minutes = Number(saved.minutes) || 60;
     S.terrain = saved.terrain || 'paved';
+    S.distanceShape = saved.distanceShape || 'loop';
+    S.distanceAmount = Number(saved.distanceAmount) || 6;
+    S.distanceUnit = saved.distanceUnit || 'mi';
+    S.distancePlan = saved.distancePlan || null;
+    S.distanceOrigin = saved.distancePlan?.origin || saved.startLoc || null;
+    S.distancePlace = saved.distancePlan?.place || null;
     S.startLoc = saved.startLoc;
     S.target = saved.target;
     S.stop = Number(saved.stop) || 1;
@@ -1528,7 +2001,11 @@ async function resumeActiveQuest() {
     userMarker(S.user);
     startLocationWatch();
 
-    if (S.phase === 'reveal' && S.discovered.length) {
+    if (S.mode === 'distance') {
+      if(!S.distancePlan)throw new Error('The saved distance route is incomplete. Please generate it again.');
+      applyDistancePlanToMap(S.distancePlan);
+      renderDistanceNavigation();
+    } else if (S.phase === 'reveal' && S.discovered.length) {
       S.target = S.discovered[S.discovered.length - 1];
       $('bottomCard').classList.add('hidden');
       $('revealCard').classList.remove('hidden');
