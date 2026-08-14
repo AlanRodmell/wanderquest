@@ -762,20 +762,20 @@ async function geoapifySearch(p, r){
 
 async function fetchRoute(start, end) {
   const key = localStorage.getItem(STORAGE_KEYS.apiKey);
-  if(!key) return;
+  if(!key) return false;
   const url = `https://api.geoapify.com/v1/routing?waypoints=${start.lat},${start.lon}|${end.lat},${end.lon}&mode=walk&apiKey=${encodeURIComponent(key.trim())}`;
-  clearRoute();
+  if (routeRequestController) routeRequestController.abort();
   routeRequestController = new AbortController();
   const requestToken = ++routeRequestToken;
 
   try {
     const res = await fetch(url, {signal: routeRequestController.signal});
-    if (!res.ok) return;
+    if (!res.ok) return false;
     const data = await res.json();
-    if (requestToken !== routeRequestToken) return;
+    if (requestToken !== routeRequestToken || !data.features?.length) return false;
     const seconds = Number(data.features?.[0]?.properties?.time);
-    S.routeMinutes = Number.isFinite(seconds) ? Math.max(1, Math.ceil(seconds / 60)) : null;
-    routeLayer = L.geoJSON(data, {
+    const nextRouteMinutes = Number.isFinite(seconds) ? Math.max(1, Math.ceil(seconds / 60)) : null;
+    const nextRouteLayer = L.geoJSON(data, {
       style: {
         color: appearanceColors().route,
         weight: 6,
@@ -783,9 +783,18 @@ async function fetchRoute(start, end) {
         dashArray: '1, 8',
         lineCap: 'round'
       }
-    }).addTo(S.map);
+    });
+    nextRouteLayer.addTo(S.map);
+    if (routeLayer && S.map) S.map.removeLayer(routeLayer);
+    routeLayer = nextRouteLayer;
+    S.routeMinutes = nextRouteMinutes;
+    update();
+    return true;
   } catch(e) {
     if (e.name !== 'AbortError') console.error("Routing error:", e);
+    return false;
+  } finally {
+    if (requestToken === routeRequestToken) routeRequestController = null;
   }
 }
 
@@ -1089,14 +1098,16 @@ function setTargetFromPool() {
   let actionsHtml = '';
   if (isHome) {
      actionsHtml = `
-      <div class="actions">
-        <button class="locate" id="locateBtn">⌖ Locate Me</button>
+      <div class="actions navigation-actions">
+        <button class="locate" id="locateBtn">⌖ Locate</button>
+        <button class="reroute" id="rerouteBtn">↻ Re-route</button>
         <button class="here" id="hereBtn">I'M HERE</button>
       </div>`;
   } else {
      actionsHtml = `
-      <div class="actions">
-        <button class="locate" id="locateBtn">⌖ Locate Me</button>
+      <div class="actions navigation-actions">
+        <button class="locate" id="locateBtn">⌖ Locate</button>
+        <button class="reroute" id="rerouteBtn">↻ Re-route</button>
         <button class="here" id="hereBtn">I'M HERE</button>
       </div>
       <div class="actions secondary">
@@ -1118,6 +1129,7 @@ function setTargetFromPool() {
   ${actionsHtml}`;
 
   $('locateBtn').onclick=guarded(locate);
+  $('rerouteBtn').onclick=guarded(reroute);
   $('hereBtn').onclick=guarded(arrive);
 
   if(!isHome) {
@@ -1152,8 +1164,9 @@ function selectDiscoveryTarget(idx) {
       <div class="statusline"><span>Discovery Route</span><div class="distance" id="distance">${distLabel()}</div></div>
       <h2 class="mystery-title">${displayName}</h2>
       <p class="mystery-copy">Follow the mapped route to your chosen destination.</p>
-      <div class="actions">
-        <button class="locate" id="locateBtn">⌖ Locate Me</button>
+      <div class="actions navigation-actions">
+        <button class="locate" id="locateBtn">⌖ Locate</button>
+        <button class="reroute" id="rerouteBtn">↻ Re-route</button>
         <button class="here" id="hereBtn">I'M HERE</button>
       </div>
       <div class="actions secondary" style="margin-top:7px">
@@ -1163,6 +1176,7 @@ function selectDiscoveryTarget(idx) {
     `;
 
     $('locateBtn').onclick = guarded(locate);
+    $('rerouteBtn').onclick = guarded(reroute);
     $('hereBtn').onclick = guarded(arrive);
     $('discoverBtn').onclick = () => { clearRoute(); S.target = null; renderDiscoveryBrowser(); };
     $('giveUpBtn').onclick = () => { if(confirm("Reveal this location on the map?")) reveal(true); };
@@ -1187,6 +1201,26 @@ async function locate(){
    if(!S.target) await mystery();
    else focusMap(true);
  }catch(e){toast(e.message)}
+}
+
+async function reroute(event){
+ const button=event?.currentTarget;
+ if(!S.target)return toast('Choose a destination before re-routing.');
+ const previousLabel=button?.textContent;
+ if(button){button.disabled=true;button.textContent='RE-ROUTING…'}
+ try{
+   S.user=await pos(0);
+   userMarker(S.user);
+   update();
+   const updated=await fetchRoute(S.user,S.target);
+   if(!updated)return toast('Could not update the route. Your current route is unchanged.');
+   focusMap(true);
+   toast('Route updated from your current location.');
+ }catch(e){
+   toast(e.message||'Unable to refresh your location.');
+ }finally{
+   if(button?.isConnected){button.disabled=false;button.textContent=previousLabel}
+ }
 }
 
 async function arrive(){

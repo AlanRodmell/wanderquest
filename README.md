@@ -30,6 +30,7 @@ walks and the discovery journal are also stored only in the current browser.
 - Endless Discovery browser with category, range and sorting controls
 - on-device discovery journal and interrupted-walk resume
 - live location updates, walking routes and destination arrival checks
+- manual re-routing from the user's latest GPS position
 - installable PWA shell with offline access to the home screen and journal
 - custom UI accent and contrasting map-route colours saved per device
 
