@@ -10,8 +10,11 @@ const cfg={
 const STORAGE_KEYS = {
   apiKey: 'wq_geoapify_key',
   history: 'wq_history',
-  activeQuest: 'wq_active_quest'
+  activeQuest: 'wq_active_quest',
+  accentColor: 'wq_accent_color',
+  routeColor: 'wq_route_color'
 };
+const DEFAULT_COLORS = {accent:'#d7ff4f',route:'#ff4f87'};
 const ACTIVE_QUEST_MAX_AGE = 12 * 60 * 60 * 1000;
 const WALKING_METRES_PER_MINUTE = 75;
 const ROUTE_DISTANCE_FACTOR = 1.25;
@@ -71,6 +74,42 @@ const S = {
 let busy = false; let DEV_MODE = false; let DEV_LOCATION = {lat:53.4084,lon:-2.9916,accuracy:25};
 function guarded(fn){return async(...a)=>{if(busy)return;busy=true;try{await fn(...a)}finally{busy=false}}}
 const $ = id => document.getElementById(id);
+
+function validHexColor(value, fallback) {
+  return /^#[0-9a-f]{6}$/i.test(value || '') ? value.toLowerCase() : fallback;
+}
+
+function appearanceColors() {
+  return {
+    accent: validHexColor(localStorage.getItem(STORAGE_KEYS.accentColor), DEFAULT_COLORS.accent),
+    route: validHexColor(localStorage.getItem(STORAGE_KEYS.routeColor), DEFAULT_COLORS.route)
+  };
+}
+
+function applyAppearance(colors = appearanceColors(), persist = false) {
+  const accent = validHexColor(colors.accent, DEFAULT_COLORS.accent);
+  const route = validHexColor(colors.route, DEFAULT_COLORS.route);
+  document.documentElement.style.setProperty('--acid', accent);
+  document.documentElement.style.setProperty('--route', route);
+  $('accentColorInput').value = accent;
+  $('routeColorInput').value = route;
+  if (persist) {
+    localStorage.setItem(STORAGE_KEYS.accentColor, accent);
+    localStorage.setItem(STORAGE_KEYS.routeColor, route);
+  }
+  if (S.map && routeLayer) routeLayer.setStyle({color: route});
+  if (S.map && S.target) targetMarker(S.target);
+}
+
+applyAppearance();
+$('accentColorInput').oninput = event => applyAppearance({...appearanceColors(), accent:event.target.value}, true);
+$('routeColorInput').oninput = event => applyAppearance({...appearanceColors(), route:event.target.value}, true);
+$('resetColorsBtn').onclick = () => {
+  localStorage.removeItem(STORAGE_KEYS.accentColor);
+  localStorage.removeItem(STORAGE_KEYS.routeColor);
+  applyAppearance(DEFAULT_COLORS);
+  toast('Default colours restored');
+};
 
 // Settings & API Key Setup
 const savedKey = localStorage.getItem(STORAGE_KEYS.apiKey);
@@ -407,7 +446,8 @@ function userMarker(p){
 }
 function targetMarker(t){
  if(S.targetMarker)S.targetMarker.remove();
- const icon=L.divIcon({className:'',html:'<div style="width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#d7ff4f;border:3px solid #111;box-shadow:0 7px 20px rgba(0,0,0,.3)"></div>',iconSize:[30,30],iconAnchor:[15,30]});
+ const accent=appearanceColors().accent;
+ const icon=L.divIcon({className:'',html:`<div style="width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${accent};border:3px solid #111;box-shadow:0 7px 20px rgba(0,0,0,.3)"></div>`,iconSize:[30,30],iconAnchor:[15,30]});
  S.targetMarker=L.marker([t.lat,t.lon],{icon,interactive:false}).addTo(S.map);
 }
 
@@ -554,7 +594,7 @@ async function fetchRoute(start, end) {
     S.routeMinutes = Number.isFinite(seconds) ? Math.max(1, Math.ceil(seconds / 60)) : null;
     routeLayer = L.geoJSON(data, {
       style: {
-        color: '#d7ff4f',
+        color: appearanceColors().route,
         weight: 6,
         opacity: 0.8,
         dashArray: '1, 8',

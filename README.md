@@ -29,6 +29,7 @@ walks and the discovery journal are also stored only in the current browser.
 - on-device discovery journal and interrupted-walk resume
 - live location updates, walking routes and destination arrival checks
 - installable PWA shell with offline access to the home screen and journal
+- custom UI accent and contrasting map-route colours saved per device
 
 Map tiles, place searches, routing and Wikipedia enrichment still require a
 network connection.
