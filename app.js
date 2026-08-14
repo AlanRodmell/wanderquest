@@ -96,7 +96,8 @@ const S = {
   discoveryFilter: 'all',
   discoveryRange: 2000,
   discoveryLimit: 8,
-  installPrompt: null
+  installPrompt: null,
+  setupStep: 1
 };
 
 let busy = false; let DEV_MODE = false; let DEV_LOCATION = {lat:53.4084,lon:-2.9916,accuracy:25};
@@ -329,6 +330,7 @@ function savePreferences() {
       terrain:S.terrain
     }));
   } catch (error) {}
+  updateWizardSummary();
 }
 
 function loadPreferences() {
@@ -409,6 +411,46 @@ document.querySelectorAll('.vibe').forEach(button => button.onclick = () => {
 });
 $('selectAllCategoriesBtn').onclick=()=>{S.selectedCategories=availableCategoryIds();renderCategoryFilters();savePreferences()};
 $('resetCategoriesBtn').onclick=()=>{S.selectedCategories=defaultCategoryIds();renderCategoryFilters();savePreferences()};
+
+const WIZARD_TITLES = ['Choose your route','Select your vibes','Refine destinations','Duration & launch'];
+
+function durationLabel(minutes) {
+  if (minutes < 60) return `${minutes} minutes`;
+  if (minutes === 60) return '1 hour';
+  return `${minutes / 60} hours`;
+}
+
+function updateWizardSummary() {
+  const summary = $('wizardSummary');
+  if (!summary) return;
+  const route = S.terrain === 'paved' ? 'Mostly paved & urban' : 'Off-road / wild';
+  const vibes = S.vibes.map(vibe => VIBE_CONFIG[vibe].label).join(' + ');
+  summary.innerHTML = `
+    <div class="wizard-summary-row"><span>Route</span><b>${esc(route)}</b></div>
+    <div class="wizard-summary-row"><span>Vibes</span><b>${esc(vibes)}</b></div>
+    <div class="wizard-summary-row"><span>Destinations</span><b>${S.selectedCategories.length} categories</b></div>
+    <div class="wizard-summary-row"><span>Duration</span><b>${esc(durationLabel(S.minutes))}</b></div>`;
+}
+
+function showWizardStep(step, scroll = true) {
+  S.setupStep = Math.max(1, Math.min(4, step));
+  document.querySelectorAll('[data-wizard-step]').forEach(panel => panel.classList.toggle('hidden', Number(panel.dataset.wizardStep) !== S.setupStep));
+  $('wizardStepText').textContent = `Step ${S.setupStep} of 4`;
+  $('wizardStepTitle').textContent = WIZARD_TITLES[S.setupStep - 1];
+  document.querySelectorAll('.wizard-dots i').forEach((dot, index) => dot.classList.toggle('active', index < S.setupStep));
+  $('wizardBackBtn').classList.toggle('hidden', S.setupStep === 1);
+  $('wizardNextBtn').classList.toggle('hidden', S.setupStep === 4);
+  updateWizardSummary();
+  if (scroll) $('home').scrollTo({top:0,behavior:'auto'});
+}
+
+$('wizardBackBtn').onclick = () => showWizardStep(S.setupStep - 1);
+$('wizardNextBtn').onclick = () => {
+  if (S.setupStep === 2 && !S.vibes.length) return toast('Choose at least one vibe.');
+  if (S.setupStep === 3 && !S.selectedCategories.length) return toast('Choose at least one destination category.');
+  showWizardStep(S.setupStep + 1);
+};
+showWizardStep(1, false);
 
 function toast(m){$('toast').textContent=m;$('toast').classList.remove('hidden');clearTimeout(toast.t);toast.t=setTimeout(()=>$('toast').classList.add('hidden'),2800)}
 

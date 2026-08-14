@@ -50,51 +50,70 @@
   </div>
 
 <section id="home" class="screen home">
-  <div class="brand"><div class="logo">W</div><div><b>WanderQuest</b><span>go somewhere unexpected</span></div></div>
-  <div class="hero">
-    <div class="micro">Blind walking adventures</div>
-    <h1>Don't choose a place.<br><em>Discover one.</em></h1>
-    <p>A mystery walk built around serendipity. We'll find somewhere interesting nearby — but won't tell you where you're going until you get there.</p>
+  <div class="home-top">
+    <div class="brand"><div class="logo">W</div><div><b>WanderQuest</b><span>go somewhere unexpected</span></div></div>
+    <div class="home-shortcuts"><button id="journalBtn" type="button">JOURNAL</button><button id="installBtn" class="hidden" type="button">INSTALL</button></div>
   </div>
 
-  <div id="resumeCard" class="resume-card hidden">
-    <div><span class="micro">Walk in progress</span><b id="resumeTitle">Resume your wander</b><small id="resumeMeta"></small></div>
-    <div class="resume-actions"><button id="resumeBtn" class="primary">RESUME →</button><button id="discardResumeBtn" class="secondary-btn">DISCARD</button></div>
+  <div class="wizard-progress" aria-live="polite">
+    <div><span id="wizardStepText">Step 1 of 4</span><b id="wizardStepTitle">Choose your route</b></div>
+    <div class="wizard-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
   </div>
-  
-  <div class="section-label">01 · Terrain & Routes</div>
-  <div class="options terrain-opts">
-    <button class="option selected" data-terrain="paved"><b>Mostly Paved & Urban</b><small>Prefers streets and surfaced paths; local route data may vary.</small></button>
-    <button class="option" data-terrain="any"><b>Off-Road / Wild</b><small>Includes overgrown tracks and nature reserves.</small></button>
-  </div>
-  
-  <div class="section-label">02 · Select your vibes <span id="vibeCount">1 / 3</span></div>
-  <div class="vibes">
-    <button class="vibe selected" data-vibe="history"><div class="icon">⌛</div><b>Time Traveler</b><small>Historic places, old stories & forgotten corners.</small></button>
-    <button class="vibe" data-vibe="art"><div class="icon">▧</div><b>Concrete Canvas</b><small>Art, murals, creative spaces & urban details.</small></button>
-    <button class="vibe" data-vibe="curious"><div class="icon">✦</div><b>Curious</b><small>Oddities, culture, architecture & places worth wondering about.</small></button>
-    <button class="vibe" data-vibe="wild"><div class="icon">♧</div><b>Wild Card</b><small>Parks, gardens, viewpoints & outdoor surprises.</small></button>
-    <button class="vibe" data-vibe="food"><div class="icon">◉</div><b>Taste Trail</b><small>Cafés, restaurants, pubs & worthwhile local stops.</small></button>
-  </div>
-  <p class="selection-note">Choose up to three. WanderQuest blends their destination scoring and prompts.</p>
 
-  <div class="section-label">03 · Refine destinations <span id="categoryCount"></span></div>
-  <div id="categoryFilters" class="category-filters"></div>
-  <div class="category-actions"><button id="selectAllCategoriesBtn" type="button">SELECT ALL</button><button id="resetCategoriesBtn" type="button">RESET FOR VIBES</button></div>
+  <div class="wizard-stage">
+    <section class="wizard-step" data-wizard-step="1">
+      <div class="hero wizard-hero">
+        <div class="micro">Blind walking adventures</div>
+        <h1>Don't choose a place.<br><em>Discover one.</em></h1>
+        <p>Start by choosing the kind of route you feel comfortable exploring.</p>
+      </div>
+      <div id="resumeCard" class="resume-card hidden">
+        <div><span class="micro">Walk in progress</span><b id="resumeTitle">Resume your wander</b><small id="resumeMeta"></small></div>
+        <div class="resume-actions"><button id="resumeBtn" class="primary">RESUME →</button><button id="discardResumeBtn" class="secondary-btn">DISCARD</button></div>
+      </div>
+      <div class="wizard-heading"><span>Route style</span><h2>What sort of route?</h2><p>You can change this before starting.</p></div>
+      <div class="options terrain-opts wizard-options">
+        <button class="option selected" data-terrain="paved"><b>Mostly Paved & Urban</b><small>Prefers streets and surfaced paths; local route data may vary.</small></button>
+        <button class="option" data-terrain="any"><b>Off-Road / Wild</b><small>Includes overgrown tracks and nature reserves.</small></button>
+      </div>
+    </section>
 
-  <div class="section-label">04 · How long?</div>
-  <div class="durations">
-    <button class="duration" data-min="30">30 min</button>
-    <button class="duration selected" data-min="60">1 hour</button>
-    <button class="duration" data-min="90">90 min</button>
-    <button class="duration" data-min="120">2 hours</button>
+    <section class="wizard-step hidden" data-wizard-step="2">
+      <div class="wizard-heading"><span>Personality</span><h2>What are you in the mood for?</h2><p>Choose one to three vibes. WanderQuest will blend them.</p></div>
+      <div class="section-label">Select your vibes <span id="vibeCount">1 / 3</span></div>
+      <div class="vibes">
+        <button class="vibe selected" data-vibe="history"><div class="icon">⌛</div><b>Time Traveler</b><small>Historic places, old stories & forgotten corners.</small></button>
+        <button class="vibe" data-vibe="art"><div class="icon">▧</div><b>Concrete Canvas</b><small>Art, murals, creative spaces & urban details.</small></button>
+        <button class="vibe" data-vibe="curious"><div class="icon">✦</div><b>Curious</b><small>Oddities, culture, architecture & places worth wondering about.</small></button>
+        <button class="vibe" data-vibe="wild"><div class="icon">♧</div><b>Wild Card</b><small>Parks, gardens, viewpoints & outdoor surprises.</small></button>
+        <button class="vibe" data-vibe="food"><div class="icon">◉</div><b>Taste Trail</b><small>Cafés, restaurants, pubs & worthwhile local stops.</small></button>
+      </div>
+    </section>
+
+    <section class="wizard-step hidden" data-wizard-step="3">
+      <div class="wizard-heading"><span>Fine tuning</span><h2>What should we look for?</h2><p>Your vibes provide a starting point. Toggle any destination types you want included.</p></div>
+      <div class="section-label">Destination filters <span id="categoryCount"></span></div>
+      <div id="categoryFilters" class="category-filters wizard-categories"></div>
+      <div class="category-actions"><button id="selectAllCategoriesBtn" type="button">SELECT ALL</button><button id="resetCategoriesBtn" type="button">RESET FOR VIBES</button></div>
+    </section>
+
+    <section class="wizard-step hidden" data-wizard-step="4">
+      <div class="wizard-heading"><span>Final details</span><h2>How long have you got?</h2><p>We'll use this to choose achievable stops and reserve time for the return.</p></div>
+      <div class="durations wizard-durations">
+        <button class="duration" data-min="30">30 min</button>
+        <button class="duration selected" data-min="60">1 hour</button>
+        <button class="duration" data-min="90">90 min</button>
+        <button class="duration" data-min="120">2 hours</button>
+      </div>
+      <div id="wizardSummary" class="wizard-summary"></div>
+      <button id="startBtn" class="primary">START MYSTERY WALK →</button>
+      <button id="justWalkBtn" class="secondary-btn">JUST WALK (ENDLESS DISCOVERY)</button>
+    </section>
   </div>
-  
-  <button id="startBtn" class="primary">START MYSTERY WALK →</button>
-  <button id="justWalkBtn" class="secondary-btn">JUST WALK (ENDLESS DISCOVERY)</button>
-  <div class="home-actions">
-    <button id="journalBtn" class="secondary-btn">DISCOVERY JOURNAL</button>
-    <button id="installBtn" class="secondary-btn hidden">INSTALL APP</button>
+
+  <div class="wizard-nav">
+    <button id="wizardBackBtn" class="wizard-back hidden" type="button">← BACK</button>
+    <button id="wizardNextBtn" class="wizard-next" type="button">NEXT →</button>
   </div>
 </section>
 
