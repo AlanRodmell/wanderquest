@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#080a0d">
+<meta name="description" content="Mystery walks and nearby discoveries built around serendipity.">
 <title>WanderQuest — Blind Mystery Walks</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/wanderquest-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
 <!-- Standard Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <link rel="stylesheet" href="./styles.css">
@@ -20,8 +24,9 @@
     <div style="display:flex;gap:7px;margin-bottom:20px;margin-top:10px;">
       <label class="sr-only" for="apiKeyInput">Geoapify API key</label>
       <input type="password" id="apiKeyInput" autocomplete="off" placeholder="Paste Geoapify API Key here..." style="flex:1;background:#171c22;color:#fff;border:1px solid #3b4650;border-radius:11px;padding:10px;font-size:11px;">
-      <button id="saveKeyBtn" style="background:var(--acid);color:#000;border:none;border-radius:11px;padding:0 15px;font-weight:bold;cursor:pointer;">SAVE</button>
+      <button id="saveKeyBtn" style="background:var(--acid);color:#000;border:none;border-radius:11px;padding:0 15px;font-weight:bold;cursor:pointer;">SAVE &amp; TEST</button>
     </div>
+    <div id="apiKeyStatus" class="api-status" role="status" aria-live="polite"></div>
 
     <hr style="border:0; border-top:1px solid #29313a; margin-bottom:15px;">
     
@@ -41,10 +46,15 @@
     <h1>Don't choose a place.<br><em>Discover one.</em></h1>
     <p>A mystery walk built around serendipity. We'll find somewhere interesting nearby — but won't tell you where you're going until you get there.</p>
   </div>
+
+  <div id="resumeCard" class="resume-card hidden">
+    <div><span class="micro">Walk in progress</span><b id="resumeTitle">Resume your wander</b><small id="resumeMeta"></small></div>
+    <div class="resume-actions"><button id="resumeBtn" class="primary">RESUME →</button><button id="discardResumeBtn" class="secondary-btn">DISCARD</button></div>
+  </div>
   
   <div class="section-label">01 · Terrain & Routes</div>
   <div class="options terrain-opts">
-    <button class="option selected" data-terrain="paved"><b>Paved & Urban</b><small>Stick to streets, paths and accessible spots.</small></button>
+    <button class="option selected" data-terrain="paved"><b>Mostly Paved & Urban</b><small>Prefers streets and surfaced paths; local route data may vary.</small></button>
     <button class="option" data-terrain="any"><b>Off-Road / Wild</b><small>Includes overgrown tracks and nature reserves.</small></button>
   </div>
   
@@ -66,13 +76,24 @@
   
   <button id="startBtn" class="primary">START MYSTERY WALK →</button>
   <button id="justWalkBtn" class="secondary-btn">JUST WALK (ENDLESS DISCOVERY)</button>
+  <div class="home-actions">
+    <button id="journalBtn" class="secondary-btn">DISCOVERY JOURNAL</button>
+    <button id="installBtn" class="secondary-btn hidden">INSTALL APP</button>
+  </div>
+</section>
+
+<section id="journal" class="screen journal hidden">
+  <div class="screen-header"><button id="closeJournalBtn" class="round-back" aria-label="Close journal">←</button><div><span class="micro">Your wanderings</span><h2>Discovery journal</h2></div></div>
+  <p class="journal-intro">Places you reached are saved on this device. Location coordinates are never uploaded by WanderQuest.</p>
+  <div id="journalList" class="journal-list"></div>
+  <button id="clearJournalBtn" class="danger-btn hidden">CLEAR JOURNAL</button>
 </section>
 
 <section id="walk" class="screen walk hidden">
   <div id="map"></div>
   <div class="map-ui">
     <div class="topbar">
-      <div class="pill" id="historyPill"><b id="vibeLabel">TIME TRAVELER</b> <span id="stopCountText">· STOP 1 / 3</span></div>
+      <div class="pill" id="historyPill"><b id="vibeLabel">TIME TRAVELER</b> <span id="stopCountText">· STOP 1 / 5</span> <span id="timeRemainingText"></span></div>
       <div class="top-actions">
         <button class="iconbtn" id="rotateTop" aria-label="Rotate Map" title="Enable/Disable Auto-Rotation">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
