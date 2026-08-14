@@ -25,6 +25,7 @@ walks and the discovery journal are also stored only in the current browser.
 ## Features
 
 - time-aware mystery walks that reserve an estimated return journey
+- multi-select vibes with individually adjustable destination categories
 - Endless Discovery browser with category, range and sorting controls
 - on-device discovery journal and interrupted-walk resume
 - live location updates, walking routes and destination arrival checks

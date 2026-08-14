@@ -68,15 +68,21 @@
     <button class="option" data-terrain="any"><b>Off-Road / Wild</b><small>Includes overgrown tracks and nature reserves.</small></button>
   </div>
   
-  <div class="section-label">02 · Pick your vibe</div>
+  <div class="section-label">02 · Select your vibes <span id="vibeCount">1 / 3</span></div>
   <div class="vibes">
     <button class="vibe selected" data-vibe="history"><div class="icon">⌛</div><b>Time Traveler</b><small>Historic places, old stories & forgotten corners.</small></button>
     <button class="vibe" data-vibe="art"><div class="icon">▧</div><b>Concrete Canvas</b><small>Art, murals, creative spaces & urban details.</small></button>
     <button class="vibe" data-vibe="curious"><div class="icon">✦</div><b>Curious</b><small>Oddities, culture, architecture & places worth wondering about.</small></button>
     <button class="vibe" data-vibe="wild"><div class="icon">♧</div><b>Wild Card</b><small>Parks, gardens, viewpoints & outdoor surprises.</small></button>
+    <button class="vibe" data-vibe="food"><div class="icon">◉</div><b>Taste Trail</b><small>Cafés, restaurants, pubs & worthwhile local stops.</small></button>
   </div>
-  
-  <div class="section-label">03 · How long?</div>
+  <p class="selection-note">Choose up to three. WanderQuest blends their destination scoring and prompts.</p>
+
+  <div class="section-label">03 · Refine destinations <span id="categoryCount"></span></div>
+  <div id="categoryFilters" class="category-filters"></div>
+  <div class="category-actions"><button id="selectAllCategoriesBtn" type="button">SELECT ALL</button><button id="resetCategoriesBtn" type="button">RESET FOR VIBES</button></div>
+
+  <div class="section-label">04 · How long?</div>
   <div class="durations">
     <button class="duration" data-min="30">30 min</button>
     <button class="duration selected" data-min="60">1 hour</button>

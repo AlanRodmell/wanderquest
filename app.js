@@ -1,10 +1,26 @@
-// Geoapify Categories Configuration
-const cfg={
-  history:{label:'TIME TRAVELER',query:`heritage,building.historic,tourism.sights`},
-  art:{label:'CONCRETE CANVAS',query:`entertainment.museum,entertainment.culture,tourism.attraction.artwork,tourism.sights`},
-  curious:{label:'CURIOUS',query:`tourism.attraction,tourism.sights,entertainment.culture,religion`},
-  wild:{label:'WILD CARD',query:`natural,leisure.park,leisure.park.nature_reserve,tourism.attraction.viewpoint`},
-  just_walk:{label:'JUST WALK',query:`tourism,heritage,leisure.park,entertainment,catering.cafe,catering.pub`}
+const CATEGORY_CONFIG = {
+  historic:{label:'Historic places',query:['heritage','building.historic'],vibes:['history']},
+  sights:{label:'Landmarks & sights',query:['tourism.sights'],vibes:['history','curious']},
+  religious:{label:'Religious heritage',query:['religion'],vibes:['history','curious']},
+  museums:{label:'Museums',query:['entertainment.museum'],vibes:['art']},
+  culture:{label:'Culture venues',query:['entertainment.culture'],vibes:['art','curious']},
+  artwork:{label:'Public art',query:['tourism.attraction.artwork'],vibes:['art']},
+  attractions:{label:'Local attractions',query:['tourism.attraction'],vibes:['curious']},
+  nature:{label:'Natural places',query:['natural'],vibes:['wild']},
+  parks:{label:'Parks & gardens',query:['leisure.park'],vibes:['wild']},
+  reserves:{label:'Nature reserves',query:['leisure.park.nature_reserve'],vibes:['wild']},
+  viewpoints:{label:'Viewpoints',query:['tourism.attraction.viewpoint'],vibes:['wild','curious']},
+  cafes:{label:'Cafés',query:['catering.cafe'],vibes:['food']},
+  restaurants:{label:'Restaurants',query:['catering.restaurant'],vibes:['food']},
+  pubs:{label:'Pubs',query:['catering.pub'],vibes:['food']}
+};
+
+const VIBE_CONFIG={
+  history:{label:'TIME TRAVELER',defaultCategories:['historic','sights']},
+  art:{label:'CONCRETE CANVAS',defaultCategories:['museums','artwork']},
+  curious:{label:'CURIOUS',defaultCategories:['attractions','sights']},
+  wild:{label:'WILD CARD',defaultCategories:['parks','viewpoints']},
+  food:{label:'TASTE TRAIL',defaultCategories:['cafes','restaurants','pubs']}
 };
 
 const STORAGE_KEYS = {
@@ -12,7 +28,8 @@ const STORAGE_KEYS = {
   history: 'wq_history',
   activeQuest: 'wq_active_quest',
   accentColor: 'wq_accent_color',
-  routeColor: 'wq_route_color'
+  routeColor: 'wq_route_color',
+  preferences: 'wq_preferences'
 };
 const DEFAULT_COLORS = {accent:'#d7ff4f',route:'#ff4f87'};
 const ACTIVE_QUEST_MAX_AGE = 12 * 60 * 60 * 1000;
@@ -29,13 +46,24 @@ const discoveryPrompts = [
   "Try to find a marker, date, or name carved somewhere nearby."
 ];
 
+const VIBE_PROMPTS = {
+  history:["Find the oldest visible date or material here.","What clue best reveals how this place was once used?"],
+  art:["Choose one colour, shape or detail you would borrow from this place.","What changes when you view this place from another angle?"],
+  curious:["Find the detail that raises the best unanswered question.","What would you point out to someone who walked straight past?"],
+  wild:["Pause for one minute and notice the nearest non-human activity.","Find three different textures or natural patterns nearby."],
+  food:["What detail gives this venue its local character?", "Look for a speciality, ingredient or tradition unique to this stop."]
+};
+
 function getRandomPrompt() {
-  return discoveryPrompts[Math.floor(Math.random() * discoveryPrompts.length)];
+  const tailored = S.vibes.flatMap(vibe => VIBE_PROMPTS[vibe] || []);
+  const prompts = tailored.length ? [...tailored,...discoveryPrompts] : discoveryPrompts;
+  return prompts[Math.floor(Math.random() * prompts.length)];
 }
 
 const S = {
   mode: 'mystery',
-  vibe: 'history',
+  vibes: ['history'],
+  selectedCategories: ['historic','sights'],
   minutes: 60,
   terrain: 'paved',
   map: null,
@@ -191,7 +219,8 @@ function activeQuestSnapshot() {
     version: 1,
     savedAt: Date.now(),
     mode: S.mode,
-    vibe: S.vibe,
+    vibes: S.vibes,
+    categories: S.selectedCategories,
     minutes: S.minutes,
     terrain: S.terrain,
     startLoc: S.startLoc,
@@ -265,9 +294,121 @@ function selectOption(selector, selected) {
     button.setAttribute('aria-pressed', String(active));
   });
 }
-document.querySelectorAll('.vibe').forEach(button => { button.setAttribute('aria-pressed', String(button.classList.contains('selected'))); button.onclick=()=>{selectOption('.vibe',button);S.vibe=button.dataset.vibe}; });
-document.querySelectorAll('.duration').forEach(button => { button.setAttribute('aria-pressed', String(button.classList.contains('selected'))); button.onclick=()=>{selectOption('.duration',button);S.minutes=+button.dataset.min;S.maxStops=S.minutes<=30?3:S.minutes<=60?5:S.minutes<=90?7:9}; });
-document.querySelectorAll('.terrain-opts .option').forEach(button => { button.setAttribute('aria-pressed', String(button.classList.contains('selected'))); button.onclick=()=>{selectOption('.terrain-opts .option',button);S.terrain=button.dataset.terrain}; });
+
+function availableCategoryIds() {
+  return Object.entries(CATEGORY_CONFIG)
+    .filter(([, config]) => config.vibes.some(vibe => S.vibes.includes(vibe)))
+    .map(([id]) => id);
+}
+
+function defaultCategoryIds() {
+  return [...new Set(S.vibes.flatMap(vibe => VIBE_CONFIG[vibe]?.defaultCategories || []))];
+}
+
+function selectedQueryTokens() {
+  return [...new Set(S.selectedCategories.flatMap(id => CATEGORY_CONFIG[id]?.query || []))];
+}
+
+function availableTokensForVibe(vibe) {
+  return [...new Set(S.selectedCategories
+    .filter(id => CATEGORY_CONFIG[id]?.vibes.includes(vibe))
+    .flatMap(id => CATEGORY_CONFIG[id].query))];
+}
+
+function selectedVibeLabel() {
+  if (S.vibes.length === 1) return VIBE_CONFIG[S.vibes[0]].label;
+  return `${S.vibes.length} VIBES`;
+}
+
+function savePreferences() {
+  try {
+    localStorage.setItem(STORAGE_KEYS.preferences, JSON.stringify({
+      vibes:S.vibes,
+      categories:S.selectedCategories,
+      minutes:S.minutes,
+      terrain:S.terrain
+    }));
+  } catch (error) {}
+}
+
+function loadPreferences() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.preferences) || 'null');
+    if (!saved) return;
+    const vibes = Array.isArray(saved.vibes) ? saved.vibes.filter(vibe => VIBE_CONFIG[vibe]).slice(0,3) : [];
+    if (vibes.length) S.vibes = vibes;
+    const available = new Set(availableCategoryIds());
+    const categories = Array.isArray(saved.categories) ? saved.categories.filter(id => available.has(id)) : [];
+    S.selectedCategories = categories.length ? categories : defaultCategoryIds();
+    if ([30,60,90,120].includes(Number(saved.minutes))) S.minutes = Number(saved.minutes);
+    if (['paved','any'].includes(saved.terrain)) S.terrain = saved.terrain;
+    S.maxStops=S.minutes<=30?3:S.minutes<=60?5:S.minutes<=90?7:9;
+  } catch (error) {}
+}
+
+function renderVibeSelections() {
+  document.querySelectorAll('.vibe').forEach(button => {
+    const selected = S.vibes.includes(button.dataset.vibe);
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  $('vibeCount').textContent = `${S.vibes.length} / 3`;
+}
+
+function renderCategoryFilters() {
+  const available = availableCategoryIds();
+  S.selectedCategories = S.selectedCategories.filter(id => available.includes(id));
+  if (!S.selectedCategories.length) S.selectedCategories = defaultCategoryIds();
+  $('categoryFilters').innerHTML = available.map(id => {
+    const selected = S.selectedCategories.includes(id);
+    return `<button type="button" class="category-filter ${selected?'selected':''}" data-category="${id}" aria-pressed="${selected}">${esc(CATEGORY_CONFIG[id].label)}</button>`;
+  }).join('');
+  $('categoryCount').textContent = `${S.selectedCategories.length} selected`;
+  document.querySelectorAll('[data-category]').forEach(button => button.onclick = () => {
+    const id = button.dataset.category;
+    if (S.selectedCategories.includes(id)) {
+      if (S.selectedCategories.length === 1) return toast('Keep at least one destination category.');
+      S.selectedCategories = S.selectedCategories.filter(value => value !== id);
+    } else {
+      S.selectedCategories.push(id);
+    }
+    renderCategoryFilters();
+    savePreferences();
+  });
+}
+
+loadPreferences();
+renderVibeSelections();
+renderCategoryFilters();
+document.querySelectorAll('.duration').forEach(button => {
+  const selected = Number(button.dataset.min) === S.minutes;
+  button.classList.toggle('selected',selected);
+  button.setAttribute('aria-pressed',String(selected));
+  button.onclick=()=>{selectOption('.duration',button);S.minutes=+button.dataset.min;S.maxStops=S.minutes<=30?3:S.minutes<=60?5:S.minutes<=90?7:9;savePreferences()};
+});
+document.querySelectorAll('.terrain-opts .option').forEach(button => {
+  const selected = button.dataset.terrain === S.terrain;
+  button.classList.toggle('selected',selected);
+  button.setAttribute('aria-pressed',String(selected));
+  button.onclick=()=>{selectOption('.terrain-opts .option',button);S.terrain=button.dataset.terrain;savePreferences()};
+});
+document.querySelectorAll('.vibe').forEach(button => button.onclick = () => {
+  const vibe = button.dataset.vibe;
+  if (S.vibes.includes(vibe)) {
+    if (S.vibes.length === 1) return toast('Choose at least one vibe.');
+    S.vibes = S.vibes.filter(value => value !== vibe);
+    S.selectedCategories = S.selectedCategories.filter(id => CATEGORY_CONFIG[id].vibes.some(value => S.vibes.includes(value)));
+  } else {
+    if (S.vibes.length >= 3) return toast('Choose up to three vibes.');
+    S.vibes.push(vibe);
+    S.selectedCategories = [...new Set([...S.selectedCategories,...VIBE_CONFIG[vibe].defaultCategories])];
+  }
+  renderVibeSelections();
+  renderCategoryFilters();
+  savePreferences();
+});
+$('selectAllCategoriesBtn').onclick=()=>{S.selectedCategories=availableCategoryIds();renderCategoryFilters();savePreferences()};
+$('resetCategoriesBtn').onclick=()=>{S.selectedCategories=defaultCategoryIds();renderCategoryFilters();savePreferences()};
 
 function toast(m){$('toast').textContent=m;$('toast').classList.remove('hidden');clearTimeout(toast.t);toast.t=setTimeout(()=>$('toast').classList.add('hidden'),2800)}
 
@@ -522,8 +663,8 @@ async function geoapifySearch(p, r){
   const key = localStorage.getItem(STORAGE_KEYS.apiKey);
   if(!key) throw new Error('API key missing. Open settings to add it.');
 
-  const activeVibe = S.mode === 'just_walk' ? 'just_walk' : S.vibe;
-  const cats = cfg[activeVibe].query;
+  const cats = selectedQueryTokens().join(',');
+  if (!cats) throw new Error('Choose at least one destination category.');
 
   const url = `https://api.geoapify.com/v2/places?categories=${encodeURIComponent(cats)}&filter=circle:${p.lon},${p.lat},${r}&limit=250&apiKey=${encodeURIComponent(key.trim())}`;
 
@@ -547,7 +688,7 @@ async function geoapifySearch(p, r){
       const props = f.properties || {};
 
       // Terrain Filtering
-      if (S.terrain === 'paved' && props.categories && S.vibe !== 'wild') {
+      if (S.terrain === 'paved' && props.categories && !S.vibes.includes('wild')) {
         if (props.categories.some(c => c.startsWith('natural') || c === 'leisure.nature_reserve')) return null;
       }
 
@@ -687,11 +828,14 @@ function sortCandidates(clean) {
   return clean.map(x => {
     let score = Math.random(); // Keep a baseline of serendipity
 
-    // Better vibe-aware scoring based on category density
+    // Reward candidates that match several of the selected vibes.
     if (x.categories && x.categories.length > 0) {
-        const vibeCats = cfg[S.vibe].query.split(',');
-        const matchCount = x.categories.filter(c => vibeCats.some(vc => c.includes(vc))).length;
-        score += (matchCount * 1.5);
+        const vibeMatches = S.vibes.filter(vibe => {
+          const tokens = availableTokensForVibe(vibe);
+          return x.categories.some(category => tokens.some(token => category.includes(token)));
+        }).length;
+        const categoryMatches = x.categories.filter(category => selectedQueryTokens().some(token => category.includes(token))).length;
+        score += (vibeMatches * 1.5) + Math.min(categoryMatches, 3) * 0.5;
     }
 
     // Reward rich metadata
@@ -1094,6 +1238,8 @@ function reveal(isGiveUp = false){
  t.discoveredAt = t.discoveredAt || new Date().toISOString();
  t.questId = S.questId;
  t.questMode = S.mode;
+ t.vibes = [...S.vibes];
+ t.selectedCategories = [...S.selectedCategories];
  if (!isGiveUp) {
    t.challenge = getRandomPrompt();
  }
@@ -1171,7 +1317,7 @@ function finish(){
     $('finishCopy').textContent='You followed the compass and let the streets reveal themselves to you.';
  } else {
     $('statTime').textContent=elapsedLabel();
-    $('statVibe').textContent=cfg[S.vibe].label;
+    $('statVibe').textContent=selectedVibeLabel();
     $('finishCopy').textContent='The destination was never the point. You got outside, paid attention and let somewhere unexpected become part of your day.';
  }
 }
@@ -1267,7 +1413,7 @@ function updateWalkHeader() {
     $('vibeLabel').textContent='ENDLESS';
     $('stopCountText').textContent='';
   } else {
-    $('vibeLabel').textContent=cfg[S.vibe].label;
+    $('vibeLabel').textContent=selectedVibeLabel();
     $('stopCountText').textContent=`· STOP ${S.stop} / ${S.maxStops}`;
   }
   updateQuestClock();
@@ -1279,7 +1425,11 @@ async function resumeActiveQuest() {
   $('resumeBtn').disabled = true;
   try {
     S.mode = saved.mode;
-    S.vibe = saved.vibe;
+    const resumedVibes = Array.isArray(saved.vibes) ? saved.vibes.filter(vibe => VIBE_CONFIG[vibe]).slice(0,3) : [];
+    S.vibes = resumedVibes.length ? resumedVibes : [VIBE_CONFIG[saved.vibe] ? saved.vibe : 'history'];
+    const resumedAvailable = new Set(availableCategoryIds());
+    const resumedCategories = Array.isArray(saved.categories) ? saved.categories.filter(id => resumedAvailable.has(id)) : [];
+    S.selectedCategories = resumedCategories.length ? resumedCategories : defaultCategoryIds();
     S.minutes = Number(saved.minutes) || 60;
     S.terrain = saved.terrain || 'paved';
     S.startLoc = saved.startLoc;
