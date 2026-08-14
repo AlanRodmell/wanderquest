@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#080a0d">
+<meta name="description" content="Mystery walks and nearby discoveries built around serendipity.">
 <title>WanderQuest — Blind Mystery Walks</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/wanderquest-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
 <!-- Standard Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <link rel="stylesheet" href="./styles.css">
@@ -20,10 +24,21 @@
     <div style="display:flex;gap:7px;margin-bottom:20px;margin-top:10px;">
       <label class="sr-only" for="apiKeyInput">Geoapify API key</label>
       <input type="password" id="apiKeyInput" autocomplete="off" placeholder="Paste Geoapify API Key here..." style="flex:1;background:#171c22;color:#fff;border:1px solid #3b4650;border-radius:11px;padding:10px;font-size:11px;">
-      <button id="saveKeyBtn" style="background:var(--acid);color:#000;border:none;border-radius:11px;padding:0 15px;font-weight:bold;cursor:pointer;">SAVE</button>
+      <button id="saveKeyBtn" style="background:var(--acid);color:#000;border:none;border-radius:11px;padding:0 15px;font-weight:bold;cursor:pointer;">SAVE &amp; TEST</button>
     </div>
+    <div id="apiKeyStatus" class="api-status" role="status" aria-live="polite"></div>
 
     <hr style="border:0; border-top:1px solid #29313a; margin-bottom:15px;">
+
+    <h3>Appearance</h3>
+    <p>Choose the interface accent and a contrasting route colour.</p>
+    <div class="colour-settings">
+      <label><span>UI accent</span><input id="accentColorInput" type="color" value="#d7ff4f"></label>
+      <label><span>Map route</span><input id="routeColorInput" type="color" value="#ff4f87"></label>
+    </div>
+    <button type="button" id="resetColorsBtn" class="settings-reset">RESET COLOURS</button>
+
+    <hr style="border:0; border-top:1px solid #29313a; margin:15px 0;">
     
     <h3>Developer Location Simulator</h3>
     <div class="dev-row">
@@ -35,44 +50,127 @@
   </div>
 
 <section id="home" class="screen home">
-  <div class="brand"><div class="logo">W</div><div><b>WanderQuest</b><span>go somewhere unexpected</span></div></div>
-  <div class="hero">
-    <div class="micro">Blind walking adventures</div>
-    <h1>Don't choose a place.<br><em>Discover one.</em></h1>
-    <p>A mystery walk built around serendipity. We'll find somewhere interesting nearby — but won't tell you where you're going until you get there.</p>
+  <div class="home-top">
+    <div class="brand"><div class="logo">W</div><div><b>WanderQuest</b><span>go somewhere unexpected</span></div></div>
+    <div class="home-shortcuts"><button id="journalBtn" type="button">JOURNAL</button><button id="installBtn" class="hidden" type="button">INSTALL</button></div>
   </div>
-  
-  <div class="section-label">01 · Terrain & Routes</div>
-  <div class="options terrain-opts">
-    <button class="option selected" data-terrain="paved"><b>Paved & Urban</b><small>Stick to streets, paths and accessible spots.</small></button>
-    <button class="option" data-terrain="any"><b>Off-Road / Wild</b><small>Includes overgrown tracks and nature reserves.</small></button>
+
+  <div class="wizard-progress" aria-live="polite">
+    <div><span id="wizardStepText">Step 1 of 4</span><b id="wizardStepTitle">Choose your route</b></div>
+    <div id="wizardDots" class="wizard-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
   </div>
-  
-  <div class="section-label">02 · Pick your vibe</div>
-  <div class="vibes">
-    <button class="vibe selected" data-vibe="history"><div class="icon">⌛</div><b>Time Traveler</b><small>Historic places, old stories & forgotten corners.</small></button>
-    <button class="vibe" data-vibe="art"><div class="icon">▧</div><b>Concrete Canvas</b><small>Art, murals, creative spaces & urban details.</small></button>
-    <button class="vibe" data-vibe="curious"><div class="icon">✦</div><b>Curious</b><small>Oddities, culture, architecture & places worth wondering about.</small></button>
-    <button class="vibe" data-vibe="wild"><div class="icon">♧</div><b>Wild Card</b><small>Parks, gardens, viewpoints & outdoor surprises.</small></button>
+
+  <div class="wizard-stage">
+    <section class="wizard-step" data-wizard-step="1" data-wizard-flow="all">
+      <div class="hero wizard-hero">
+        <div class="micro">Blind walking adventures</div>
+        <h1>Don't choose a place.<br><em>Discover one.</em></h1>
+        <p>Choose a mystery adventure or ask WanderQuest to build a route around your distance.</p>
+      </div>
+      <div id="resumeCard" class="resume-card hidden">
+        <div><span class="micro">Walk in progress</span><b id="resumeTitle">Resume your wander</b><small id="resumeMeta"></small></div>
+        <div class="resume-actions"><button id="resumeBtn" class="primary">RESUME →</button><button id="discardResumeBtn" class="secondary-btn">DISCARD</button></div>
+      </div>
+      <div class="wizard-heading"><span>Journey mode</span><h2>How do you want to wander?</h2></div>
+      <div class="options journey-mode-options">
+        <button class="option journey-mode selected" data-setup-mode="mystery"><b>✦ Mystery Walk</b><small>Follow unexpected destinations chosen around your vibes and available time.</small></button>
+        <button class="option journey-mode" data-setup-mode="distance"><b>↗ How Far?</b><small>Choose a distance and let WanderQuest map a loop, return route or finish point.</small></button>
+      </div>
+      <div class="section-label">Route surface</div>
+      <div class="options terrain-opts wizard-options">
+        <button class="option selected" data-terrain="paved"><b>Mostly Paved & Urban</b><small>Prefers streets and surfaced paths; local route data may vary.</small></button>
+        <button class="option" data-terrain="any"><b>Off-Road / Wild</b><small>Includes overgrown tracks and nature reserves.</small></button>
+      </div>
+    </section>
+
+    <section class="wizard-step hidden" data-wizard-step="2" data-wizard-flow="mystery">
+      <div class="wizard-heading"><span>Personality</span><h2>What are you in the mood for?</h2><p>Choose one to three vibes. WanderQuest will blend them.</p></div>
+      <div class="section-label">Select your vibes <span id="vibeCount">1 / 3</span></div>
+      <div class="vibes">
+        <button class="vibe selected" data-vibe="history"><div class="icon">⌛</div><b>Time Traveler</b><small>Historic places, old stories & forgotten corners.</small></button>
+        <button class="vibe" data-vibe="art"><div class="icon">▧</div><b>Concrete Canvas</b><small>Art, murals, creative spaces & urban details.</small></button>
+        <button class="vibe" data-vibe="curious"><div class="icon">✦</div><b>Curious</b><small>Oddities, culture, architecture & places worth wondering about.</small></button>
+        <button class="vibe" data-vibe="wild"><div class="icon">♧</div><b>Wild Card</b><small>Parks, gardens, viewpoints & outdoor surprises.</small></button>
+        <button class="vibe" data-vibe="food"><div class="icon">◉</div><b>Taste Trail</b><small>Cafés, restaurants, pubs & worthwhile local stops.</small></button>
+      </div>
+    </section>
+
+    <section class="wizard-step hidden" data-wizard-step="3" data-wizard-flow="mystery">
+      <div class="wizard-heading"><span>Fine tuning</span><h2>What should we look for?</h2><p>Your vibes provide a starting point. Toggle any destination types you want included.</p></div>
+      <div class="section-label">Destination filters <span id="categoryCount"></span></div>
+      <div id="categoryFilters" class="category-filters wizard-categories"></div>
+      <div class="category-actions"><button id="selectAllCategoriesBtn" type="button">SELECT ALL</button><button id="resetCategoriesBtn" type="button">RESET FOR VIBES</button></div>
+    </section>
+
+    <section class="wizard-step hidden" data-wizard-step="4" data-wizard-flow="mystery">
+      <div class="wizard-heading"><span>Final details</span><h2>How long have you got?</h2><p>We'll use this to choose achievable stops and reserve time for the return.</p></div>
+      <div class="durations wizard-durations">
+        <button class="duration" data-min="30">30 min</button>
+        <button class="duration selected" data-min="60">1 hour</button>
+        <button class="duration" data-min="90">90 min</button>
+        <button class="duration" data-min="120">2 hours</button>
+      </div>
+      <div id="wizardSummary" class="wizard-summary"></div>
+      <button id="startBtn" class="primary">START MYSTERY WALK →</button>
+      <button id="justWalkBtn" class="secondary-btn">JUST WALK (ENDLESS DISCOVERY)</button>
+    </section>
+
+    <section class="wizard-step hidden" data-wizard-step="2" data-wizard-flow="distance">
+      <div class="wizard-heading"><span>Route shape</span><h2>Where should it finish?</h2><p>Every route begins from your current location.</p></div>
+      <div class="options distance-shape-options wizard-options">
+        <button class="option selected" data-distance-shape="loop"><b>⟳ Loop</b><small>Explore a circular route and finish where you started.</small></button>
+        <button class="option" data-distance-shape="outback"><b>⇄ There &amp; Back</b><small>Reach a turnaround point, then follow the same route home.</small></button>
+        <button class="option" data-distance-shape="point"><b>→ Point-to-Point</b><small>Finish at a place roughly your chosen distance away.</small></button>
+      </div>
+    </section>
+
+    <section class="wizard-step hidden" data-wizard-step="3" data-wizard-flow="distance">
+      <div class="wizard-heading"><span>Target distance</span><h2>How far?</h2><p>We'll get as close as the available streets and paths allow.</p></div>
+      <div class="unit-toggle" role="group" aria-label="Distance unit">
+        <button type="button" class="selected" data-distance-unit="mi">MILES</button>
+        <button type="button" data-distance-unit="km">KILOMETRES</button>
+      </div>
+      <div id="distancePresets" class="distance-presets"></div>
+      <label class="distance-custom"><span>Custom distance</span><span><input id="distanceAmountInput" type="number" inputmode="decimal" min="0.5" max="30" step="0.5" value="6"><b id="distanceUnitLabel">mi</b></span></label>
+      <div id="distanceEstimate" class="distance-estimate"></div>
+    </section>
+
+    <section class="wizard-step hidden" data-wizard-step="4" data-wizard-flow="distance">
+      <div class="wizard-heading"><span>Optional discovery</span><h2 id="distancePlaceHeading">Add somewhere interesting?</h2><p id="distancePlaceCopy">Search around you for a place to shape the route, or let WanderQuest choose the waypoints.</p></div>
+      <button id="searchDistancePlacesBtn" class="primary distance-search-btn" type="button">SEARCH AROUND ME</button>
+      <div id="distancePlaceStatus" class="distance-place-status">Uses your selected vibe and destination filters.</div>
+      <div id="distancePlaceList" class="distance-place-list"></div>
+      <button id="clearDistancePlaceBtn" class="secondary-btn hidden" type="button">LET WANDERQUEST CHOOSE</button>
+    </section>
+
+    <section class="wizard-step hidden" data-wizard-step="5" data-wizard-flow="distance">
+      <div class="wizard-heading"><span>Route preview</span><h2>Your route is taking shape.</h2><p>Check the mapped line and regenerate it if you want another direction.</p></div>
+      <div id="distancePreviewMap" class="distance-preview-map" aria-label="Distance route preview"></div>
+      <div id="distancePreviewStatus" class="distance-preview-status"><span class="loader"><span class="dot"></span> Building your route…</span></div>
+      <div id="distanceRouteSummary" class="wizard-summary hidden"></div>
+      <button id="regenerateDistanceBtn" class="secondary-btn hidden" type="button">↻ GENERATE ANOTHER ROUTE</button>
+      <button id="startDistanceBtn" class="primary hidden" type="button">START THIS ROUTE →</button>
+    </section>
   </div>
-  
-  <div class="section-label">03 · How long?</div>
-  <div class="durations">
-    <button class="duration" data-min="30">30 min</button>
-    <button class="duration selected" data-min="60">1 hour</button>
-    <button class="duration" data-min="90">90 min</button>
-    <button class="duration" data-min="120">2 hours</button>
+
+  <div class="wizard-nav">
+    <button id="wizardBackBtn" class="wizard-back hidden" type="button">← BACK</button>
+    <button id="wizardNextBtn" class="wizard-next" type="button">NEXT →</button>
   </div>
-  
-  <button id="startBtn" class="primary">START MYSTERY WALK →</button>
-  <button id="justWalkBtn" class="secondary-btn">JUST WALK (ENDLESS DISCOVERY)</button>
+</section>
+
+<section id="journal" class="screen journal hidden">
+  <div class="screen-header"><button id="closeJournalBtn" class="round-back" aria-label="Close journal">←</button><div><span class="micro">Your wanderings</span><h2>Discovery journal</h2></div></div>
+  <p class="journal-intro">Places you reached are saved on this device. Location coordinates are never uploaded by WanderQuest.</p>
+  <div id="journalList" class="journal-list"></div>
+  <button id="clearJournalBtn" class="danger-btn hidden">CLEAR JOURNAL</button>
 </section>
 
 <section id="walk" class="screen walk hidden">
   <div id="map"></div>
   <div class="map-ui">
     <div class="topbar">
-      <div class="pill" id="historyPill"><b id="vibeLabel">TIME TRAVELER</b> <span id="stopCountText">· STOP 1 / 3</span></div>
+      <div class="pill" id="historyPill"><b id="vibeLabel">TIME TRAVELER</b> <span id="stopCountText">· STOP 1 / 5</span> <span id="timeRemainingText"></span></div>
       <div class="top-actions">
         <button class="iconbtn" id="rotateTop" aria-label="Rotate Map" title="Enable/Disable Auto-Rotation">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
@@ -109,9 +207,9 @@
     
     <div id="finishCard" class="finish-card hidden">
       <div class="reveal-kicker">Quest complete</div>
-      <h2>You went looking for nothing.<br>And found <span id="foundCount">3</span> things.</h2>
+      <h2 id="finishTitle">You went looking for nothing.<br>And found <span id="foundCount">3</span> things.</h2>
       <p id="finishCopy">That's the point.</p>
-      <div class="stats"><div class="stat"><b id="statStops">3</b><span>discoveries</span></div><div class="stat"><b id="statTime">1h</b><span>quest</span></div><div class="stat"><b id="statVibe">—</b><span>vibe</span></div></div>
+      <div class="stats"><div class="stat"><b id="statStops">3</b><span id="statStopsLabel">discoveries</span></div><div class="stat"><b id="statTime">1h</b><span>quest</span></div><div class="stat"><b id="statVibe">—</b><span id="statVibeLabel">vibe</span></div></div>
       <button class="primary" id="againBtn">GO AGAIN →</button>
       <button class="primary" id="homeBtn" style="background:#dfe2d9;margin-top:7px">BACK TO HOME</button>
     </div>

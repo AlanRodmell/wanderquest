@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="WanderQuest">
+  <rect width="512" height="512" rx="112" fill="#080a0d"/>
+  <g transform="translate(256 256) rotate(-8) translate(-256 -256)">
+    <rect x="112" y="112" width="288" height="288" rx="88" fill="#d7ff4f"/>
+    <path d="M167 174h58l31 157 31-157h58l-52 210h-73z" fill="#10130e"/>
+  </g>
+</svg>
