@@ -65,7 +65,7 @@
       <div class="hero wizard-hero">
         <div class="micro">Blind walking adventures</div>
         <h1>Don't choose a place.<br><em>Discover one.</em></h1>
-        <p>Choose a mystery adventure or ask WanderQuest to build a route around your distance.</p>
+        <p>Start exploring nearby now, choose a mystery adventure, or ask WanderQuest to build a route around your distance.</p>
       </div>
       <div id="resumeCard" class="resume-card hidden">
         <div><span class="micro">Walk in progress</span><b id="resumeTitle">Resume your wander</b><small id="resumeMeta"></small></div>
@@ -75,6 +75,7 @@
       <div class="options journey-mode-options">
         <button class="option journey-mode selected" data-setup-mode="mystery"><b>✦ Mystery Walk</b><small>Follow unexpected destinations chosen around your vibes and available time.</small></button>
         <button class="option journey-mode" data-setup-mode="distance"><b>↗ How Far?</b><small>Choose a distance and let WanderQuest map a loop, return route or finish point.</small></button>
+        <button id="startEndlessBtn" class="option endless-launch" type="button"><b>∞ Endless Walk</b><small>Start immediately. Choose activities and kinds of places after WanderQuest finds what is nearby.</small></button>
       </div>
       <div class="section-label">Route surface</div>
       <div class="options terrain-opts wizard-options">
@@ -112,7 +113,6 @@
       </div>
       <div id="wizardSummary" class="wizard-summary"></div>
       <button id="startBtn" class="primary">START MYSTERY WALK →</button>
-      <button id="justWalkBtn" class="secondary-btn">JUST WALK (ENDLESS DISCOVERY)</button>
     </section>
 
     <section class="wizard-step hidden" data-wizard-step="2" data-wizard-flow="distance">
@@ -222,6 +222,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate.js" crossorigin=""></script>
 
+<script src="./discovery-config.js"></script>
 <script src="./app.js"></script>
 </body>
 </html>

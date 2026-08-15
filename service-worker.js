@@ -1,8 +1,9 @@
-const CACHE_NAME = 'wanderquest-shell-v6';
+const CACHE_NAME = 'wanderquest-shell-v7';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
+  './discovery-config.js',
   './app.js',
   './manifest.webmanifest',
   './icons/wanderquest-icon.svg',

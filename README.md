@@ -25,11 +25,12 @@ walks and the discovery journal are also stored only in the current browser.
 ## Features
 
 - time-aware mystery walks that reserve an estimated return journey
-- multi-select vibes with individually adjustable destination categories
+- optional multi-select vibes for Mystery Walks with individually adjustable destination categories
 - focused four-step mobile setup wizard for route, vibes, filters and duration
 - five-step How Far route builder with loop, there-and-back and point-to-point options
 - miles/kilometres targets, nearby-place waypoints, mapped previews and route regeneration
-- Endless Discovery browser with category, range and sorting controls
+- one-tap Endless Walks with no initial vibe requirement
+- Endless Discovery browser with activity, creative, food, culture, nature and history filters
 - on-device discovery journal and interrupted-walk resume
 - live location updates, walking routes and destination arrival checks
 - manual re-routing from the user's latest GPS position
@@ -43,6 +44,7 @@ network connection.
 
 - `index.html` — page structure and GitHub Pages entry point
 - `styles.css` — visual design and responsive styles
+- `discovery-config.js` — place categories, vibe defaults and discovery grouping
 - `app.js` — quest, map, location and persistence behavior
 - `manifest.webmanifest` — install metadata and icons
 - `service-worker.js` — cached application shell

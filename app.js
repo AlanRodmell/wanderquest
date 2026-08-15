@@ -1,27 +1,4 @@
-const CATEGORY_CONFIG = {
-  historic:{label:'Historic places',query:['heritage','building.historic'],vibes:['history']},
-  sights:{label:'Landmarks & sights',query:['tourism.sights'],vibes:['history','curious']},
-  religious:{label:'Religious heritage',query:['religion'],vibes:['history','curious']},
-  museums:{label:'Museums',query:['entertainment.museum'],vibes:['art']},
-  culture:{label:'Culture venues',query:['entertainment.culture'],vibes:['art','curious']},
-  artwork:{label:'Public art',query:['tourism.attraction.artwork'],vibes:['art']},
-  attractions:{label:'Local attractions',query:['tourism.attraction'],vibes:['curious']},
-  nature:{label:'Natural places',query:['natural'],vibes:['wild']},
-  parks:{label:'Parks & gardens',query:['leisure.park'],vibes:['wild']},
-  reserves:{label:'Nature reserves',query:['leisure.park.nature_reserve'],vibes:['wild']},
-  viewpoints:{label:'Viewpoints',query:['tourism.attraction.viewpoint'],vibes:['wild','curious']},
-  cafes:{label:'Cafés',query:['catering.cafe'],vibes:['food']},
-  restaurants:{label:'Restaurants',query:['catering.restaurant'],vibes:['food']},
-  pubs:{label:'Pubs',query:['catering.pub'],vibes:['food']}
-};
-
-const VIBE_CONFIG={
-  history:{label:'TIME TRAVELER',defaultCategories:['historic','sights']},
-  art:{label:'CONCRETE CANVAS',defaultCategories:['museums','artwork']},
-  curious:{label:'CURIOUS',defaultCategories:['attractions','sights']},
-  wild:{label:'WILD CARD',defaultCategories:['parks','viewpoints']},
-  food:{label:'TASTE TRAIL',defaultCategories:['cafes','restaurants','pubs']}
-};
+const {CATEGORY_CONFIG,VIBE_CONFIG,DISCOVERY_FILTERS,allCategoryIds,categoryIdsForVibes,queryTokensForCategoryIds,categoryGroupFromCategories} = globalThis.WanderQuestDiscovery;
 
 const STORAGE_KEYS = {
   apiKey: 'wq_geoapify_key',
@@ -324,9 +301,7 @@ function selectOption(selector, selected) {
 }
 
 function availableCategoryIds() {
-  return Object.entries(CATEGORY_CONFIG)
-    .filter(([, config]) => config.vibes.some(vibe => S.vibes.includes(vibe)))
-    .map(([id]) => id);
+  return categoryIdsForVibes(S.vibes, S.mode === 'just_walk');
 }
 
 function defaultCategoryIds() {
@@ -334,7 +309,7 @@ function defaultCategoryIds() {
 }
 
 function selectedQueryTokens() {
-  return [...new Set(S.selectedCategories.flatMap(id => CATEGORY_CONFIG[id]?.query || []))];
+  return queryTokensForCategoryIds(S.selectedCategories);
 }
 
 function availableTokensForVibe(vibe) {
@@ -1153,16 +1128,11 @@ function placeKey(place) {
 }
 
 function categoryGroup(place) {
-  const value = (place.categories || []).join(' ');
-  if (/catering\.|restaurant|cafe|pub/.test(value)) return 'food';
-  if (/natural|leisure\.park|viewpoint|garden/.test(value)) return 'nature';
-  if (/artwork|museum|culture|gallery/.test(value)) return 'art';
-  if (/heritage|historic|monument|religion|memorial/.test(value)) return 'history';
-  return 'curious';
+  return categoryGroupFromCategories(place.categories || []);
 }
 
 function categoryLabel(place) {
-  const labels = {food:'Food & drink',nature:'Nature',art:'Art & culture',history:'History',curious:'Local curiosity'};
+  const labels = {activity:'Activities & making',food:'Food & drink',nature:'Nature',art:'Art & culture',history:'History',curious:'Local curiosity'};
   return labels[categoryGroup(place)];
 }
 
@@ -1256,9 +1226,7 @@ function renderDiscoveryBrowser() {
   const visible = results.slice(0, S.discoveryLimit);
   S.visibleDiscoveries = visible;
   const visited = new Set(S.journal.map(placeKey));
-  const filters = [
-    ['all','All'],['history','History'],['art','Art'],['nature','Nature'],['food','Food'],['curious','Curious']
-  ];
+  const filters = DISCOVERY_FILTERS;
 
   const items = visible.map((place, index) => {
     const name = place.name === 'Local Discovery' ? 'Hidden local gem' : place.name;
@@ -1274,7 +1242,7 @@ function renderDiscoveryBrowser() {
   $('bottomCard').innerHTML = `
     <div class="statusline"><span>Endless discovery</span><span>${results.length} nearby</span></div>
     <h2 class="mystery-title">Where next?</h2>
-    <p class="mystery-copy">Browse somewhere nearby or let WanderQuest surprise you.</p>
+    <p class="mystery-copy">Choose what sounds good now, browse somewhere nearby, or let WanderQuest surprise you.</p>
     <div class="browser-toolbar">
       <label><span class="sr-only">Sort places</span><select id="discoverySort"><option value="recommended">Recommended</option><option value="nearest">Nearest</option><option value="unusual">Most unusual</option></select></label>
       <label><span class="sr-only">Maximum distance</span><select id="discoveryRange"><option value="500">Within 500 m</option><option value="1000">Within 1 km</option><option value="2000">Within 2 km</option><option value="5000">Within 5 km</option></select></label>
@@ -1916,9 +1884,15 @@ async function launchExperience(mode) {
  }
 
  $('startBtn').disabled=true;
- $('justWalkBtn').disabled=true;
+ $('startEndlessBtn').disabled=true;
  try{
   S.mode = mode;
+  if (mode === 'just_walk') {
+    S.vibes = [];
+    S.selectedCategories = allCategoryIds();
+    S.discoveryFilter = 'all';
+    S.discoveryLimit = 8;
+  }
   clearActiveQuest();
   S.stop = 1;
   S.target = null;
@@ -1939,10 +1913,10 @@ async function launchExperience(mode) {
   saveActiveQuest();
   await mystery();
   $('startBtn').disabled=false;
-  $('justWalkBtn').disabled=false;
+  $('startEndlessBtn').disabled=false;
  }catch(e){
   $('walk').classList.add('hidden');$('home').classList.remove('hidden');
-  $('startBtn').disabled=false;$('justWalkBtn').disabled=false;
+  $('startBtn').disabled=false;$('startEndlessBtn').disabled=false;
   toast(e.message);
  }
 }
@@ -1969,10 +1943,10 @@ async function resumeActiveQuest() {
     S.mode = saved.mode;
     S.setupMode = saved.mode === 'distance' ? 'distance' : 'mystery';
     const resumedVibes = Array.isArray(saved.vibes) ? saved.vibes.filter(vibe => VIBE_CONFIG[vibe]).slice(0,3) : [];
-    S.vibes = resumedVibes.length ? resumedVibes : [VIBE_CONFIG[saved.vibe] ? saved.vibe : 'history'];
-    const resumedAvailable = new Set(availableCategoryIds());
+    S.vibes = saved.mode === 'just_walk' ? resumedVibes : resumedVibes.length ? resumedVibes : [VIBE_CONFIG[saved.vibe] ? saved.vibe : 'history'];
+    const resumedAvailable = new Set(saved.mode === 'just_walk' ? allCategoryIds() : availableCategoryIds());
     const resumedCategories = Array.isArray(saved.categories) ? saved.categories.filter(id => resumedAvailable.has(id)) : [];
-    S.selectedCategories = resumedCategories.length ? resumedCategories : defaultCategoryIds();
+    S.selectedCategories = resumedCategories.length ? resumedCategories : saved.mode === 'just_walk' ? allCategoryIds() : defaultCategoryIds();
     S.minutes = Number(saved.minutes) || 60;
     S.terrain = saved.terrain || 'paved';
     S.distanceShape = saved.distanceShape || 'loop';
@@ -2033,7 +2007,7 @@ async function resumeActiveQuest() {
 }
 
 $('startBtn').onclick=()=>launchExperience('mystery');
-$('justWalkBtn').onclick=()=>launchExperience('just_walk');
+$('startEndlessBtn').onclick=()=>launchExperience('just_walk');
 
 window.addEventListener('beforeinstallprompt', event => {
   event.preventDefault();
