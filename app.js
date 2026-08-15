@@ -1,4 +1,4 @@
-const {CATEGORY_CONFIG,VIBE_CONFIG,DISCOVERY_FILTERS,allCategoryIds,categoryIdsForVibes,queryTokensForCategoryIds,categoryGroupFromCategories} = globalThis.WanderQuestDiscovery;
+const {CATEGORY_CONFIG,DISCOVERY_FILTERS,allCategoryIds,queryTokensForCategoryIds,categoryGroupFromCategories} = globalThis.WanderQuestDiscovery;
 
 const STORAGE_KEYS = {
   apiKey: 'wq_geoapify_key',
@@ -21,29 +21,18 @@ const discoveryPrompts = [
   "Look for traces of how this place has changed over time.",
   "What is the most easily overlooked detail here?",
   "Observe the texture of the materials around you.",
-  "What vibes or historical weight does this corner hold?",
+  "What atmosphere or historical weight does this corner hold?",
   "Try to find a marker, date, or name carved somewhere nearby."
 ];
 
-const VIBE_PROMPTS = {
-  history:["Find the oldest visible date or material here.","What clue best reveals how this place was once used?"],
-  art:["Choose one colour, shape or detail you would borrow from this place.","What changes when you view this place from another angle?"],
-  curious:["Find the detail that raises the best unanswered question.","What would you point out to someone who walked straight past?"],
-  wild:["Pause for one minute and notice the nearest non-human activity.","Find three different textures or natural patterns nearby."],
-  food:["What detail gives this venue its local character?", "Look for a speciality, ingredient or tradition unique to this stop."]
-};
-
 function getRandomPrompt() {
-  const tailored = S.vibes.flatMap(vibe => VIBE_PROMPTS[vibe] || []);
-  const prompts = tailored.length ? [...tailored,...discoveryPrompts] : discoveryPrompts;
-  return prompts[Math.floor(Math.random() * prompts.length)];
+  return discoveryPrompts[Math.floor(Math.random() * discoveryPrompts.length)];
 }
 
 const S = {
   mode: 'mystery',
   setupMode: 'mystery',
-  vibes: ['history'],
-  selectedCategories: ['historic','sights'],
+  selectedCategories: [],
   minutes: 60,
   terrain: 'paved',
   map: null,
@@ -213,7 +202,6 @@ function activeQuestSnapshot() {
     version: 2,
     savedAt: Date.now(),
     mode: S.mode,
-    vibes: S.vibes,
     categories: S.selectedCategories,
     minutes: S.minutes,
     terrain: S.terrain,
@@ -300,33 +288,17 @@ function selectOption(selector, selected) {
   });
 }
 
-function availableCategoryIds() {
-  return categoryIdsForVibes(S.vibes, S.mode === 'just_walk');
-}
+function availableCategoryIds() { return allCategoryIds(); }
 
-function defaultCategoryIds() {
-  return [...new Set(S.vibes.flatMap(vibe => VIBE_CONFIG[vibe]?.defaultCategories || []))];
-}
+function defaultCategoryIds() { return allCategoryIds(); }
 
 function selectedQueryTokens() {
   return queryTokensForCategoryIds(S.selectedCategories);
 }
 
-function availableTokensForVibe(vibe) {
-  return [...new Set(S.selectedCategories
-    .filter(id => CATEGORY_CONFIG[id]?.vibes.includes(vibe))
-    .flatMap(id => CATEGORY_CONFIG[id].query))];
-}
-
-function selectedVibeLabel() {
-  if (S.vibes.length === 1) return VIBE_CONFIG[S.vibes[0]].label;
-  return `${S.vibes.length} VIBES`;
-}
-
 function savePreferences() {
   try {
     localStorage.setItem(STORAGE_KEYS.preferences, JSON.stringify({
-      vibes:S.vibes,
       categories:S.selectedCategories,
       minutes:S.minutes,
       terrain:S.terrain,
@@ -343,8 +315,6 @@ function loadPreferences() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.preferences) || 'null');
     if (!saved) return;
-    const vibes = Array.isArray(saved.vibes) ? saved.vibes.filter(vibe => VIBE_CONFIG[vibe]).slice(0,3) : [];
-    if (vibes.length) S.vibes = vibes;
     const available = new Set(availableCategoryIds());
     const categories = Array.isArray(saved.categories) ? saved.categories.filter(id => available.has(id)) : [];
     S.selectedCategories = categories.length ? categories : defaultCategoryIds();
@@ -356,15 +326,6 @@ function loadPreferences() {
     if (Number.isFinite(Number(saved.distanceAmount))) S.distanceAmount = Math.min(30,Math.max(.5,Number(saved.distanceAmount)));
     S.maxStops=S.minutes<=30?3:S.minutes<=60?5:S.minutes<=90?7:9;
   } catch (error) {}
-}
-
-function renderVibeSelections() {
-  document.querySelectorAll('.vibe').forEach(button => {
-    const selected = S.vibes.includes(button.dataset.vibe);
-    button.classList.toggle('selected', selected);
-    button.setAttribute('aria-pressed', String(selected));
-  });
-  $('vibeCount').textContent = `${S.vibes.length} / 3`;
 }
 
 function renderCategoryFilters() {
@@ -390,7 +351,6 @@ function renderCategoryFilters() {
 }
 
 loadPreferences();
-renderVibeSelections();
 renderCategoryFilters();
 document.querySelectorAll('.duration').forEach(button => {
   const selected = Number(button.dataset.min) === S.minutes;
@@ -430,30 +390,15 @@ document.querySelectorAll('[data-distance-shape]').forEach(button => {
     savePreferences();
   };
 });
-document.querySelectorAll('.vibe').forEach(button => button.onclick = () => {
-  const vibe = button.dataset.vibe;
-  if (S.vibes.includes(vibe)) {
-    if (S.vibes.length === 1) return toast('Choose at least one vibe.');
-    S.vibes = S.vibes.filter(value => value !== vibe);
-    S.selectedCategories = S.selectedCategories.filter(id => CATEGORY_CONFIG[id].vibes.some(value => S.vibes.includes(value)));
-  } else {
-    if (S.vibes.length >= 3) return toast('Choose up to three vibes.');
-    S.vibes.push(vibe);
-    S.selectedCategories = [...new Set([...S.selectedCategories,...VIBE_CONFIG[vibe].defaultCategories])];
-  }
-  renderVibeSelections();
-  renderCategoryFilters();
-  savePreferences();
-});
 $('selectAllCategoriesBtn').onclick=()=>{S.selectedCategories=availableCategoryIds();renderCategoryFilters();savePreferences()};
 $('resetCategoriesBtn').onclick=()=>{S.selectedCategories=defaultCategoryIds();renderCategoryFilters();savePreferences()};
 
 const WIZARD_TITLES = {
-  mystery:['Choose your journey','Select your vibes','Refine destinations','Duration & launch'],
+  mystery:['Choose your journey','Refine destinations','Duration & launch'],
   distance:['Choose your journey','Choose route shape','Set the distance','Add a discovery','Preview & launch']
 };
 
-function wizardStepCount() { return S.setupMode === 'distance' ? 5 : 4; }
+function wizardStepCount() { return S.setupMode === 'distance' ? 5 : 3; }
 
 function durationLabel(minutes) {
   const rounded=Math.max(1,Math.round(minutes));
@@ -539,10 +484,8 @@ function updateWizardSummary() {
   const summary = $('wizardSummary');
   if (!summary) return;
   const route = S.terrain === 'paved' ? 'Mostly paved & urban' : 'Off-road / wild';
-  const vibes = S.vibes.map(vibe => VIBE_CONFIG[vibe].label).join(' + ');
   summary.innerHTML = `
     <div class="wizard-summary-row"><span>Route</span><b>${esc(route)}</b></div>
-    <div class="wizard-summary-row"><span>Vibes</span><b>${esc(vibes)}</b></div>
     <div class="wizard-summary-row"><span>Destinations</span><b>${S.selectedCategories.length} categories</b></div>
     <div class="wizard-summary-row"><span>Duration</span><b>${esc(durationLabel(S.minutes))}</b></div>`;
 }
@@ -571,8 +514,7 @@ function showWizardStep(step, scroll = true) {
 
 $('wizardBackBtn').onclick = () => showWizardStep(S.setupStep - 1);
 $('wizardNextBtn').onclick = () => {
-  if (S.setupMode === 'mystery' && S.setupStep === 2 && !S.vibes.length) return toast('Choose at least one vibe.');
-  if (S.setupMode === 'mystery' && S.setupStep === 3 && !S.selectedCategories.length) return toast('Choose at least one destination category.');
+  if (S.setupMode === 'mystery' && S.setupStep === 2 && !S.selectedCategories.length) return toast('Choose at least one destination category.');
   if (S.setupMode === 'distance' && S.setupStep === 3 && targetDistanceMetres() < 500) return toast('Choose a route of at least 0.5 km.');
   showWizardStep(S.setupStep + 1);
 };
@@ -857,7 +799,7 @@ async function geoapifySearch(p, r){
       const props = f.properties || {};
 
       // Terrain Filtering
-      if (S.terrain === 'paved' && props.categories && !S.vibes.includes('wild')) {
+      if (S.terrain === 'paved' && props.categories) {
         if (props.categories.some(c => c.startsWith('natural') || c === 'leisure.nature_reserve')) return null;
       }
 
@@ -1175,14 +1117,10 @@ function sortCandidates(clean) {
   return clean.map(x => {
     let score = Math.random(); // Keep a baseline of serendipity
 
-    // Reward candidates that match several of the selected vibes.
+    // Reward candidates that strongly match the selected destination categories.
     if (x.categories && x.categories.length > 0) {
-        const vibeMatches = S.vibes.filter(vibe => {
-          const tokens = availableTokensForVibe(vibe);
-          return x.categories.some(category => tokens.some(token => category.includes(token)));
-        }).length;
         const categoryMatches = x.categories.filter(category => selectedQueryTokens().some(token => category.includes(token))).length;
-        score += (vibeMatches * 1.5) + Math.min(categoryMatches, 3) * 0.5;
+        score += Math.min(categoryMatches, 3) * 0.5;
     }
 
     // Reward rich metadata
@@ -1729,7 +1667,6 @@ function reveal(isGiveUp = false){
  t.discoveredAt = t.discoveredAt || new Date().toISOString();
  t.questId = S.questId;
  t.questMode = S.mode;
- t.vibes = [...S.vibes];
  t.selectedCategories = [...S.selectedCategories];
  if (!isGiveUp) {
    t.challenge = getRandomPrompt();
@@ -1805,26 +1742,26 @@ function finish(){
     $('statStops').textContent=formatRouteDistance(S.distancePlan?.distance||0);
     $('statStopsLabel').textContent='mapped route';
     $('statTime').textContent=elapsedLabel();
-    $('statVibe').textContent=distanceShapeLabel();
-    $('statVibeLabel').textContent='route shape';
+    $('statMode').textContent=distanceShapeLabel();
+    $('statModeLabel').textContent='route shape';
     $('finishCopy').textContent='A route built from where you stood, shaped around how far you wanted to go.';
  } else if (S.mode === 'just_walk') {
     $('finishTitle').innerHTML='You went looking for nothing.<br>And found <span id="foundCount"></span> things.';
     $('foundCount').textContent=foundCount;
     $('statStops').textContent=foundCount;
     $('statStopsLabel').textContent='discoveries';
-    $('statVibeLabel').textContent='vibe';
+    $('statModeLabel').textContent='walk';
     $('statTime').textContent=elapsedLabel();
-    $('statVibe').textContent='Just Walk';
+    $('statMode').textContent='Endless';
     $('finishCopy').textContent='You followed the compass and let the streets reveal themselves to you.';
  } else {
     $('finishTitle').innerHTML='You went looking for nothing.<br>And found <span id="foundCount"></span> things.';
     $('foundCount').textContent=foundCount;
     $('statStops').textContent=foundCount;
     $('statStopsLabel').textContent='discoveries';
-    $('statVibeLabel').textContent='vibe';
+    $('statModeLabel').textContent='walk';
     $('statTime').textContent=elapsedLabel();
-    $('statVibe').textContent=selectedVibeLabel();
+    $('statMode').textContent='Mystery';
     $('finishCopy').textContent='The destination was never the point. You got outside, paid attention and let somewhere unexpected become part of your day.';
  }
 }
@@ -1888,7 +1825,6 @@ async function launchExperience(mode) {
  try{
   S.mode = mode;
   if (mode === 'just_walk') {
-    S.vibes = [];
     S.selectedCategories = allCategoryIds();
     S.discoveryFilter = 'all';
     S.discoveryLimit = 8;
@@ -1923,13 +1859,13 @@ async function launchExperience(mode) {
 
 function updateWalkHeader() {
   if (S.mode === 'distance') {
-    $('vibeLabel').textContent='HOW FAR?';
+    $('modeLabel').textContent='HOW FAR?';
     $('stopCountText').textContent=`· ${distanceShapeLabel().toUpperCase()} · ${formatRouteDistance(S.distancePlan?.distance||targetDistanceMetres())}`;
   } else if (S.mode === 'just_walk') {
-    $('vibeLabel').textContent='ENDLESS';
+    $('modeLabel').textContent='ENDLESS';
     $('stopCountText').textContent='';
   } else {
-    $('vibeLabel').textContent=selectedVibeLabel();
+    $('modeLabel').textContent='MYSTERY';
     $('stopCountText').textContent=`· STOP ${S.stop} / ${S.maxStops}`;
   }
   updateQuestClock();
@@ -1942,11 +1878,9 @@ async function resumeActiveQuest() {
   try {
     S.mode = saved.mode;
     S.setupMode = saved.mode === 'distance' ? 'distance' : 'mystery';
-    const resumedVibes = Array.isArray(saved.vibes) ? saved.vibes.filter(vibe => VIBE_CONFIG[vibe]).slice(0,3) : [];
-    S.vibes = saved.mode === 'just_walk' ? resumedVibes : resumedVibes.length ? resumedVibes : [VIBE_CONFIG[saved.vibe] ? saved.vibe : 'history'];
-    const resumedAvailable = new Set(saved.mode === 'just_walk' ? allCategoryIds() : availableCategoryIds());
+    const resumedAvailable = new Set(availableCategoryIds());
     const resumedCategories = Array.isArray(saved.categories) ? saved.categories.filter(id => resumedAvailable.has(id)) : [];
-    S.selectedCategories = resumedCategories.length ? resumedCategories : saved.mode === 'just_walk' ? allCategoryIds() : defaultCategoryIds();
+    S.selectedCategories = resumedCategories.length ? resumedCategories : defaultCategoryIds();
     S.minutes = Number(saved.minutes) || 60;
     S.terrain = saved.terrain || 'paved';
     S.distanceShape = saved.distanceShape || 'loop';
