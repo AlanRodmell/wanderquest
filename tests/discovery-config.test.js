@@ -1,11 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {CATEGORY_CONFIG,allCategoryIds,categoryIdsForVibes,queryTokensForCategoryIds,categoryGroupFromCategories} = require('../discovery-config.js');
+const fs = require('node:fs');
+const path = require('node:path');
+const {CATEGORY_CONFIG,allCategoryIds,queryTokensForCategoryIds,categoryGroupFromCategories} = require('../discovery-config.js');
 
-test('Endless discovery can start without a vibe and search every category', () => {
-  assert.deepEqual(categoryIdsForVibes([], true), allCategoryIds());
-  assert.ok(categoryIdsForVibes([], true).length > categoryIdsForVibes(['history']).length);
-  assert.ok(queryTokensForCategoryIds(categoryIdsForVibes([], true)).includes('production.pottery'));
+test('discovery can search every category without a personality filter', () => {
+  assert.ok(allCategoryIds().length > 0);
+  assert.ok(queryTokensForCategoryIds(allCategoryIds()).includes('production.pottery'));
 });
 
 test('creative and activity venues include pottery and hands-on places', () => {
@@ -14,4 +15,13 @@ test('creative and activity venues include pottery and hands-on places', () => {
   assert.equal(categoryGroupFromCategories(['catering.cafe','production.pottery']), 'activity');
   assert.equal(categoryGroupFromCategories(['activity']), 'activity');
   assert.equal(categoryGroupFromCategories(['entertainment.escape_game']), 'activity');
+});
+
+test('Mystery Walk has no vibe setup or runtime dependency', () => {
+  const root = path.join(__dirname, '..');
+  const sources = ['index.html','app.js','discovery-config.js','styles.css']
+    .map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+    .join('\n');
+  assert.doesNotMatch(sources, /vibes?/i);
+  assert.match(sources, /mystery:\['Choose your journey','Refine destinations','Duration & launch'\]/);
 });

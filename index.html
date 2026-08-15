@@ -56,8 +56,8 @@
   </div>
 
   <div class="wizard-progress" aria-live="polite">
-    <div><span id="wizardStepText">Step 1 of 4</span><b id="wizardStepTitle">Choose your route</b></div>
-    <div id="wizardDots" class="wizard-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <div><span id="wizardStepText">Step 1 of 3</span><b id="wizardStepTitle">Choose your route</b></div>
+    <div id="wizardDots" class="wizard-dots" aria-hidden="true"><i></i><i></i><i></i></div>
   </div>
 
   <div class="wizard-stage">
@@ -73,7 +73,7 @@
       </div>
       <div class="wizard-heading"><span>Journey mode</span><h2>How do you want to wander?</h2></div>
       <div class="options journey-mode-options">
-        <button class="option journey-mode selected" data-setup-mode="mystery"><b>✦ Mystery Walk</b><small>Follow unexpected destinations chosen around your vibes and available time.</small></button>
+        <button class="option journey-mode selected" data-setup-mode="mystery"><b>✦ Mystery Walk</b><small>Follow unexpected destinations chosen around your interests and available time.</small></button>
         <button class="option journey-mode" data-setup-mode="distance"><b>↗ How Far?</b><small>Choose a distance and let WanderQuest map a loop, return route or finish point.</small></button>
         <button id="startEndlessBtn" class="option endless-launch" type="button"><b>∞ Endless Walk</b><small>Start immediately. Choose activities and kinds of places after WanderQuest finds what is nearby.</small></button>
       </div>
@@ -85,25 +85,13 @@
     </section>
 
     <section class="wizard-step hidden" data-wizard-step="2" data-wizard-flow="mystery">
-      <div class="wizard-heading"><span>Personality</span><h2>What are you in the mood for?</h2><p>Choose one to three vibes. WanderQuest will blend them.</p></div>
-      <div class="section-label">Select your vibes <span id="vibeCount">1 / 3</span></div>
-      <div class="vibes">
-        <button class="vibe selected" data-vibe="history"><div class="icon">⌛</div><b>Time Traveler</b><small>Historic places, old stories & forgotten corners.</small></button>
-        <button class="vibe" data-vibe="art"><div class="icon">▧</div><b>Concrete Canvas</b><small>Art, murals, creative spaces & urban details.</small></button>
-        <button class="vibe" data-vibe="curious"><div class="icon">✦</div><b>Curious</b><small>Oddities, culture, architecture & places worth wondering about.</small></button>
-        <button class="vibe" data-vibe="wild"><div class="icon">♧</div><b>Wild Card</b><small>Parks, gardens, viewpoints & outdoor surprises.</small></button>
-        <button class="vibe" data-vibe="food"><div class="icon">◉</div><b>Taste Trail</b><small>Cafés, restaurants, pubs & worthwhile local stops.</small></button>
-      </div>
+      <div class="wizard-heading"><span>Destinations</span><h2>What should we look for?</h2><p>Choose the kinds of places you want WanderQuest to include.</p></div>
+      <div class="section-label">Destination filters <span id="categoryCount"></span></div>
+      <div id="categoryFilters" class="category-filters wizard-categories"></div>
+      <div class="category-actions"><button id="selectAllCategoriesBtn" type="button">SELECT ALL</button><button id="resetCategoriesBtn" type="button">RESET</button></div>
     </section>
 
     <section class="wizard-step hidden" data-wizard-step="3" data-wizard-flow="mystery">
-      <div class="wizard-heading"><span>Fine tuning</span><h2>What should we look for?</h2><p>Your vibes provide a starting point. Toggle any destination types you want included.</p></div>
-      <div class="section-label">Destination filters <span id="categoryCount"></span></div>
-      <div id="categoryFilters" class="category-filters wizard-categories"></div>
-      <div class="category-actions"><button id="selectAllCategoriesBtn" type="button">SELECT ALL</button><button id="resetCategoriesBtn" type="button">RESET FOR VIBES</button></div>
-    </section>
-
-    <section class="wizard-step hidden" data-wizard-step="4" data-wizard-flow="mystery">
       <div class="wizard-heading"><span>Final details</span><h2>How long have you got?</h2><p>We'll use this to choose achievable stops and reserve time for the return.</p></div>
       <div class="durations wizard-durations">
         <button class="duration" data-min="30">30 min</button>
@@ -138,7 +126,7 @@
     <section class="wizard-step hidden" data-wizard-step="4" data-wizard-flow="distance">
       <div class="wizard-heading"><span>Optional discovery</span><h2 id="distancePlaceHeading">Add somewhere interesting?</h2><p id="distancePlaceCopy">Search around you for a place to shape the route, or let WanderQuest choose the waypoints.</p></div>
       <button id="searchDistancePlacesBtn" class="primary distance-search-btn" type="button">SEARCH AROUND ME</button>
-      <div id="distancePlaceStatus" class="distance-place-status">Uses your selected vibe and destination filters.</div>
+      <div id="distancePlaceStatus" class="distance-place-status">Uses your selected destination filters.</div>
       <div id="distancePlaceList" class="distance-place-list"></div>
       <button id="clearDistancePlaceBtn" class="secondary-btn hidden" type="button">LET WANDERQUEST CHOOSE</button>
     </section>
@@ -170,7 +158,7 @@
   <div id="map"></div>
   <div class="map-ui">
     <div class="topbar">
-      <div class="pill" id="historyPill"><b id="vibeLabel">TIME TRAVELER</b> <span id="stopCountText">· STOP 1 / 5</span> <span id="timeRemainingText"></span></div>
+      <div class="pill" id="historyPill"><b id="modeLabel">MYSTERY</b> <span id="stopCountText">· STOP 1 / 5</span> <span id="timeRemainingText"></span></div>
       <div class="top-actions">
         <button class="iconbtn" id="rotateTop" aria-label="Rotate Map" title="Enable/Disable Auto-Rotation">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
@@ -209,7 +197,7 @@
       <div class="reveal-kicker">Quest complete</div>
       <h2 id="finishTitle">You went looking for nothing.<br>And found <span id="foundCount">3</span> things.</h2>
       <p id="finishCopy">That's the point.</p>
-      <div class="stats"><div class="stat"><b id="statStops">3</b><span id="statStopsLabel">discoveries</span></div><div class="stat"><b id="statTime">1h</b><span>quest</span></div><div class="stat"><b id="statVibe">—</b><span id="statVibeLabel">vibe</span></div></div>
+      <div class="stats"><div class="stat"><b id="statStops">3</b><span id="statStopsLabel">discoveries</span></div><div class="stat"><b id="statTime">1h</b><span>quest</span></div><div class="stat"><b id="statMode">Mystery</b><span id="statModeLabel">walk</span></div></div>
       <button class="primary" id="againBtn">GO AGAIN →</button>
       <button class="primary" id="homeBtn" style="background:#dfe2d9;margin-top:7px">BACK TO HOME</button>
     </div>
