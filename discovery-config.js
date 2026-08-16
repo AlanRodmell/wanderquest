@@ -61,7 +61,10 @@
       'production.beekeeper','production.brewery','production.cheese',
       'production.distillery','production.pottery','production.winery'
     ],
-    ['education.library','education.college','education.university','service.post.office']
+    [
+      'education.library','education.college','education.university',
+      'public_transport.train','service.post.office'
+    ]
   ];
   const ENDLESS_POI_QUERY_TOKENS = ENDLESS_POI_CATEGORY_BATCHES.flat();
 

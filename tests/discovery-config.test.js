@@ -62,6 +62,7 @@ test('Endless excludes residences, streets, boundaries and infrastructure', () =
   excluded.forEach(category => assert.ok(!ENDLESS_POI_QUERY_TOKENS.includes(category), category));
   assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('building.historic'));
   assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('education.library'));
+  assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('public_transport.train'));
   assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('service.post.office'));
   assert.ok(!ENDLESS_POI_QUERY_TOKENS.includes('accommodation'));
   assert.ok(!ENDLESS_POI_QUERY_TOKENS.includes('accommodation.apartment'));
@@ -90,6 +91,7 @@ test('Endless discovery defaults to nearest and does not exclude close candidate
   const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
   assert.match(source, /discoverySort: 'nearest'/);
   assert.match(source, /ENDLESS_POI_CATEGORY_BATCHES\.map/);
+  assert.match(source, /queryTokens: queryTokensForCategoryIds\(allCategoryIds\(\)\)/);
   assert.match(source, /namedOnly: true/);
   assert.match(source, /if \(namedOnly && !explicitName\) return null/);
   assert.match(source, /S\.candidates = deduplicatePlaces/);
