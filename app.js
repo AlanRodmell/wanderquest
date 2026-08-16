@@ -2,8 +2,8 @@ const {
   CATEGORY_CONFIG,
   DISCOVERY_FILTERS,
   IMMEDIATE_POI_RADIUS,
-  GEOAPIFY_CATEGORY_BATCHES,
-  GEOAPIFY_CATEGORY_ROOTS,
+  ENDLESS_POI_CATEGORY_BATCHES,
+  ENDLESS_POI_QUERY_TOKENS,
   allCategoryIds,
   queryTokensForCategoryIds,
   categoryGroupFromCategories
@@ -1060,7 +1060,7 @@ function cacheValid(){
 
 async function fetchCandidates(radius = BREADCRUMB_RADIUS){
  const searches = S.mode === 'just_walk'
-   ? GEOAPIFY_CATEGORY_BATCHES.map(queryTokens => geoapifySearch(S.user, radius, {
+   ? ENDLESS_POI_CATEGORY_BATCHES.map(queryTokens => geoapifySearch(S.user, radius, {
        queryTokens,
        applyTerrainFilter: false,
        namedOnly: true
@@ -1068,7 +1068,7 @@ async function fetchCandidates(radius = BREADCRUMB_RADIUS){
    : [geoapifySearch(S.user, radius)];
  if (S.mode === 'just_walk') {
    searches.push(geoapifySearch(S.user, IMMEDIATE_POI_RADIUS, {
-     queryTokens: GEOAPIFY_CATEGORY_ROOTS,
+     queryTokens: ENDLESS_POI_QUERY_TOKENS,
      applyTerrainFilter: false
    }));
  }
