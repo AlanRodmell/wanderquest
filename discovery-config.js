@@ -35,23 +35,33 @@
   ];
 
   const IMMEDIATE_POI_RADIUS = 25;
-  // Keep locality and boundary records from crowding POIs out of Geoapify's
-  // capped response. Each batch is proximity-biased and merged client-side.
-  const GEOAPIFY_CATEGORY_BATCHES = [
-    [
-      'accommodation','activity','adult','amenity','beach','camping','catering',
-      'commercial','education','entertainment','heritage','leisure','man_made',
-      'maritime','memorial','national_park','natural','pet','production',
-      'religion','rental','service','ski','sport','tourism','waterway'
-    ],
-    [
-      'airport','childcare','emergency','healthcare','office','parking',
-      'public_transport','railway'
-    ],
-    ['building','highway','power'],
-    ['administrative','low_emission_zone','political','populated_place','postal_code']
+  const GEOAPIFY_CATEGORY_ROOTS = [
+    'accommodation','activity','adult','administrative','airport','amenity','beach','building','camping',
+    'catering','childcare','commercial','education','emergency','entertainment','healthcare','heritage',
+    'highway','leisure','low_emission_zone','man_made','maritime','memorial','national_park','natural',
+    'office','parking','pet','political','populated_place','postal_code','power','production',
+    'public_transport','railway','religion','rental','service','ski','sport','tourism','waterway'
   ];
-  const GEOAPIFY_CATEGORY_ROOTS = GEOAPIFY_CATEGORY_BATCHES.flat();
+
+  // Endless searches destinations, not every mapped feature. Broad roots that
+  // include residences, streets, boundaries and infrastructure are deliberately
+  // excluded or replaced with useful child categories.
+  const ENDLESS_POI_CATEGORY_BATCHES = [
+    [
+      'activity','beach','camping','entertainment','heritage','leisure','man_made',
+      'maritime','memorial','national_park','natural','religion','ski','sport',
+      'tourism','waterway','building.historic'
+    ],
+    [
+      'accommodation','catering','commercial.antiques','commercial.art',
+      'commercial.books','commercial.food_and_drink','commercial.gift_and_souvenir',
+      'commercial.hobby','commercial.marketplace','commercial.second_hand',
+      'production.beekeeper','production.brewery','production.cheese',
+      'production.distillery','production.pottery','production.winery'
+    ],
+    ['education.library','education.college','education.university','service.post.office']
+  ];
+  const ENDLESS_POI_QUERY_TOKENS = ENDLESS_POI_CATEGORY_BATCHES.flat();
 
   function allCategoryIds() {
     return Object.keys(CATEGORY_CONFIG);
@@ -63,9 +73,9 @@
 
   function categoryGroupFromCategories(categories = []) {
     const value = categories.join(' ');
-    if (/(^|\s)activity(?:\.|\s|$)|production\.pottery|commercial\.hobby|entertainment\.(activity_park|amusement_arcade|bowling_alley|escape_game|miniature_golf)/.test(value)) return 'activity';
-    if (/catering\.|restaurant|cafe|pub/.test(value)) return 'food';
-    if (/natural|leisure\.park|viewpoint|garden/.test(value)) return 'nature';
+    if (/(^|\s)(activity|sport)(?:\.|\s|$)|production\.pottery|commercial\.hobby|entertainment\.(activity_park|amusement_arcade|bowling_alley|escape_game|miniature_golf)/.test(value)) return 'activity';
+    if (/catering\.|commercial\.food_and_drink|restaurant|cafe|pub/.test(value)) return 'food';
+    if (/natural|national_park|beach|waterway|leisure\.park|viewpoint|garden/.test(value)) return 'nature';
     if (/artwork|museum|culture|gallery|commercial\.art/.test(value)) return 'art';
     if (/heritage|historic|monument|religion|memorial|man_made\.(tower|lighthouse|windmill|watermill)/.test(value)) return 'history';
     return 'curious';
@@ -75,8 +85,9 @@
     CATEGORY_CONFIG,
     DISCOVERY_FILTERS,
     IMMEDIATE_POI_RADIUS,
-    GEOAPIFY_CATEGORY_BATCHES,
     GEOAPIFY_CATEGORY_ROOTS,
+    ENDLESS_POI_CATEGORY_BATCHES,
+    ENDLESS_POI_QUERY_TOKENS,
     allCategoryIds,
     queryTokensForCategoryIds,
     categoryGroupFromCategories
