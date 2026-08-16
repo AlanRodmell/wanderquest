@@ -5,12 +5,13 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function createDiscoveryConfig() {
   const CATEGORY_CONFIG = {
     historic:{label:'Historic places',query:['heritage','building.historic']},
-    sights:{label:'Landmarks & sights',query:['tourism.sights']},
+    sights:{label:'Landmarks & sights',query:['tourism.sights','man_made.tower','man_made.lighthouse','man_made.windmill','man_made.watermill']},
     religious:{label:'Religious heritage',query:['religion']},
     museums:{label:'Museums',query:['entertainment.museum']},
     culture:{label:'Culture venues',query:['entertainment.culture']},
     artwork:{label:'Public art',query:['tourism.attraction.artwork']},
     creative:{label:'Creative & maker spaces',query:['production.pottery','commercial.hobby.art','commercial.hobby.sewing_and_knitting','entertainment.culture.arts_centre']},
+    producers:{label:'Wineries & local producers',query:['production.winery','production.brewery','production.distillery']},
     activities:{label:'Activities & clubs',query:['activity','entertainment.activity_park','entertainment.amusement_arcade','entertainment.bowling_alley','entertainment.escape_game','entertainment.miniature_golf']},
     markets:{label:'Markets & local makers',query:['commercial.marketplace','commercial.art','commercial.gift_and_souvenir']},
     attractions:{label:'Local attractions',query:['tourism.attraction']},
@@ -33,6 +34,54 @@
     ['curious','Curiosities']
   ];
 
+  const IMMEDIATE_POI_RADIUS = 25;
+  // Geoapify's complete supported top-level Places category set. Querying a
+  // parent key includes all of its documented child categories.
+  const GEOAPIFY_CATEGORY_ROOTS = [
+    'accommodation',
+    'activity',
+    'adult',
+    'administrative',
+    'airport',
+    'amenity',
+    'beach',
+    'building',
+    'camping',
+    'catering',
+    'childcare',
+    'commercial',
+    'education',
+    'emergency',
+    'entertainment',
+    'healthcare',
+    'heritage',
+    'highway',
+    'leisure',
+    'low_emission_zone',
+    'man_made',
+    'maritime',
+    'memorial',
+    'national_park',
+    'natural',
+    'office',
+    'parking',
+    'pet',
+    'political',
+    'populated_place',
+    'postal_code',
+    'power',
+    'production',
+    'public_transport',
+    'railway',
+    'religion',
+    'rental',
+    'service',
+    'ski',
+    'sport',
+    'tourism',
+    'waterway'
+  ];
+
   function allCategoryIds() {
     return Object.keys(CATEGORY_CONFIG);
   }
@@ -47,9 +96,17 @@
     if (/catering\.|restaurant|cafe|pub/.test(value)) return 'food';
     if (/natural|leisure\.park|viewpoint|garden/.test(value)) return 'nature';
     if (/artwork|museum|culture|gallery|commercial\.art/.test(value)) return 'art';
-    if (/heritage|historic|monument|religion|memorial/.test(value)) return 'history';
+    if (/heritage|historic|monument|religion|memorial|man_made\.(tower|lighthouse|windmill|watermill)/.test(value)) return 'history';
     return 'curious';
   }
 
-  return {CATEGORY_CONFIG,DISCOVERY_FILTERS,allCategoryIds,queryTokensForCategoryIds,categoryGroupFromCategories};
+  return {
+    CATEGORY_CONFIG,
+    DISCOVERY_FILTERS,
+    IMMEDIATE_POI_RADIUS,
+    GEOAPIFY_CATEGORY_ROOTS,
+    allCategoryIds,
+    queryTokensForCategoryIds,
+    categoryGroupFromCategories
+  };
 }));
