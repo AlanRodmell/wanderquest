@@ -5,6 +5,7 @@ const {
   ENDLESS_POI_CATEGORY_BATCHES,
   ENDLESS_POI_QUERY_TOKENS,
   deduplicatePlaces,
+  isEndlessDestination,
   allCategoryIds,
   queryTokensForCategoryIds,
   categoryGroupFromCategories
@@ -810,6 +811,7 @@ async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyT
       const props = f.properties || {};
       const explicitName = String(props.name || '').trim();
       if (namedOnly && !explicitName) return null;
+      if (S.mode === 'just_walk' && !isEndlessDestination(props.categories || [])) return null;
 
       // Terrain Filtering
       if (applyTerrainFilter && S.mode !== 'just_walk' && S.terrain === 'paved' && props.categories) {

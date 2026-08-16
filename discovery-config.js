@@ -105,6 +105,19 @@
     return unique;
   }
 
+  function isEndlessDestination(categories = []) {
+    const linearWater = categories.some(category => [
+      'natural.water.river_system',
+      'waterway.channels',
+      'waterway.river_system'
+    ].includes(category));
+    if (!linearWater) return true;
+
+    // Keep a river-adjacent feature when it is also independently classified
+    // as a visitable place, but reject raw line-segment records for the waterway.
+    return categories.some(category => /^(accommodation|activity|beach|building\.historic|camping|catering|commercial|education|entertainment|heritage|leisure|man_made|maritime|memorial|national_park|production|religion|service\.post\.office|ski|sport|tourism)(\.|$)/.test(category));
+  }
+
   function allCategoryIds() {
     return Object.keys(CATEGORY_CONFIG);
   }
@@ -131,6 +144,7 @@
     ENDLESS_POI_CATEGORY_BATCHES,
     ENDLESS_POI_QUERY_TOKENS,
     deduplicatePlaces,
+    isEndlessDestination,
     allCategoryIds,
     queryTokensForCategoryIds,
     categoryGroupFromCategories
