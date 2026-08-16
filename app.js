@@ -1,4 +1,12 @@
-const {CATEGORY_CONFIG,DISCOVERY_FILTERS,allCategoryIds,queryTokensForCategoryIds,categoryGroupFromCategories} = globalThis.WanderQuestDiscovery;
+const {
+  CATEGORY_CONFIG,
+  DISCOVERY_FILTERS,
+  IMMEDIATE_POI_RADIUS,
+  GEOAPIFY_CATEGORY_ROOTS,
+  allCategoryIds,
+  queryTokensForCategoryIds,
+  categoryGroupFromCategories
+} = globalThis.WanderQuestDiscovery;
 
 const STORAGE_KEYS = {
   apiKey: 'wq_geoapify_key',
@@ -61,7 +69,7 @@ const S = {
   questId: null,
   deadline: 0,
   routeMinutes: null,
-  discoverySort: 'recommended',
+  discoverySort: 'nearest',
   discoveryFilter: 'all',
   discoveryRange: 2000,
   discoveryLimit: 8,
@@ -293,6 +301,7 @@ function availableCategoryIds() { return allCategoryIds(); }
 function defaultCategoryIds() { return allCategoryIds(); }
 
 function selectedQueryTokens() {
+  if (S.mode === 'just_walk') return GEOAPIFY_CATEGORY_ROOTS;
   return queryTokensForCategoryIds(S.selectedCategories);
 }
 
@@ -770,14 +779,14 @@ function stopCompass() {
 }
 
 // GEOAPIFY FETCHING
-async function geoapifySearch(p, r){
+async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyTerrainFilter = true} = {}){
   const key = localStorage.getItem(STORAGE_KEYS.apiKey);
   if(!key) throw new Error('API key missing. Open settings to add it.');
 
-  const cats = selectedQueryTokens().join(',');
+  const cats = queryTokens.join(',');
   if (!cats) throw new Error('Choose at least one destination category.');
 
-  const url = `https://api.geoapify.com/v2/places?categories=${encodeURIComponent(cats)}&filter=circle:${p.lon},${p.lat},${r}&limit=250&apiKey=${encodeURIComponent(key.trim())}`;
+  const url = `https://api.geoapify.com/v2/places?categories=${encodeURIComponent(cats)}&filter=circle:${p.lon},${p.lat},${r}&bias=proximity:${p.lon},${p.lat}&limit=500&apiKey=${encodeURIComponent(key.trim())}`;
 
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 15000);
@@ -799,7 +808,7 @@ async function geoapifySearch(p, r){
       const props = f.properties || {};
 
       // Terrain Filtering
-      if (S.terrain === 'paved' && props.categories) {
+      if (applyTerrainFilter && S.mode !== 'just_walk' && S.terrain === 'paved' && props.categories) {
         if (props.categories.some(c => c.startsWith('natural') || c === 'leisure.nature_reserve')) return null;
       }
 
@@ -1049,7 +1058,17 @@ function cacheValid(){
 }
 
 async function fetchCandidates(radius = BREADCRUMB_RADIUS){
- S.candidates = await geoapifySearch(S.user, radius);
+ const searches = [geoapifySearch(S.user, radius)];
+ if (S.mode === 'just_walk') {
+   searches.push(geoapifySearch(S.user, IMMEDIATE_POI_RADIUS, {
+     queryTokens: GEOAPIFY_CATEGORY_ROOTS,
+     applyTerrainFilter: false
+   }));
+ }
+ const results = await Promise.all(searches);
+ const candidates = new Map();
+ results.flat().forEach(place => candidates.set(placeKey(place), place));
+ S.candidates = Array.from(candidates.values());
  S.candidatesOrigin = S.user;
  S.candidatesRadius = radius;
 }
@@ -1060,7 +1079,7 @@ function filterPool(items) {
   const seen = new Set(S.used);
   return items
     .map(x => ({...x, dist: dist(S.user, x)}))
-    .filter(x => x.dist >= min && x.dist <= max && !seen.has(placeKey(x)));
+    .filter(x => (S.mode === 'just_walk' || x.dist >= min) && x.dist <= max && !seen.has(placeKey(x)));
 }
 
 function placeKey(place) {
@@ -1826,6 +1845,7 @@ async function launchExperience(mode) {
   S.mode = mode;
   if (mode === 'just_walk') {
     S.selectedCategories = allCategoryIds();
+    S.discoverySort = 'nearest';
     S.discoveryFilter = 'all';
     S.discoveryLimit = 8;
   }
