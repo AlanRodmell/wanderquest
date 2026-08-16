@@ -8,6 +8,7 @@ const {
   GEOAPIFY_CATEGORY_ROOTS,
   ENDLESS_POI_CATEGORY_BATCHES,
   ENDLESS_POI_QUERY_TOKENS,
+  deduplicatePlaces,
   allCategoryIds,
   queryTokensForCategoryIds,
   categoryGroupFromCategories
@@ -61,7 +62,21 @@ test('Endless excludes residences, streets, boundaries and infrastructure', () =
   assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('building.historic'));
   assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('education.library'));
   assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('service.post.office'));
+  assert.ok(!ENDLESS_POI_QUERY_TOKENS.includes('accommodation'));
+  assert.ok(!ENDLESS_POI_QUERY_TOKENS.includes('accommodation.apartment'));
+  assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('accommodation.hotel'));
   assert.equal(new Set(ENDLESS_POI_QUERY_TOKENS).size, ENDLESS_POI_QUERY_TOKENS.length);
+});
+
+test('duplicate provider records collapse by name and nearby coordinates', () => {
+  const places = [
+    {name:"St Aidan's Winery",lat:55.00000,lon:-1.80000,origId:'poi',dist:20},
+    {name:'St Aidans Winery',lat:55.00008,lon:-1.80005,origId:'building',dist:21},
+    {name:"St Aidan's Winery",lat:55.01000,lon:-1.80000,origId:'other-branch',dist:1200},
+    {name:'Osborne Tower',lat:55.00100,lon:-1.80100,origId:'tower',dist:130}
+  ];
+  const unique = deduplicatePlaces(places);
+  assert.deepEqual(unique.map(place => place.origId), ['poi','tower','other-branch']);
 });
 
 test('Endless discovery defaults to nearest and does not exclude close candidates', () => {
@@ -69,6 +84,8 @@ test('Endless discovery defaults to nearest and does not exclude close candidate
   assert.match(source, /discoverySort: 'nearest'/);
   assert.match(source, /ENDLESS_POI_CATEGORY_BATCHES\.map/);
   assert.match(source, /namedOnly: true/);
+  assert.match(source, /if \(namedOnly && !explicitName\) return null/);
+  assert.match(source, /S\.candidates = deduplicatePlaces/);
   assert.match(source, /conditions=named/);
   assert.match(source, /geoapifySearch\(S\.user, IMMEDIATE_POI_RADIUS/);
   assert.match(source, /S\.mode !== 'just_walk' && S\.terrain === 'paved'/);
