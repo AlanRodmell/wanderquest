@@ -35,52 +35,23 @@
   ];
 
   const IMMEDIATE_POI_RADIUS = 25;
-  // Geoapify's complete supported top-level Places category set. Querying a
-  // parent key includes all of its documented child categories.
-  const GEOAPIFY_CATEGORY_ROOTS = [
-    'accommodation',
-    'activity',
-    'adult',
-    'administrative',
-    'airport',
-    'amenity',
-    'beach',
-    'building',
-    'camping',
-    'catering',
-    'childcare',
-    'commercial',
-    'education',
-    'emergency',
-    'entertainment',
-    'healthcare',
-    'heritage',
-    'highway',
-    'leisure',
-    'low_emission_zone',
-    'man_made',
-    'maritime',
-    'memorial',
-    'national_park',
-    'natural',
-    'office',
-    'parking',
-    'pet',
-    'political',
-    'populated_place',
-    'postal_code',
-    'power',
-    'production',
-    'public_transport',
-    'railway',
-    'religion',
-    'rental',
-    'service',
-    'ski',
-    'sport',
-    'tourism',
-    'waterway'
+  // Keep locality and boundary records from crowding POIs out of Geoapify's
+  // capped response. Each batch is proximity-biased and merged client-side.
+  const GEOAPIFY_CATEGORY_BATCHES = [
+    [
+      'accommodation','activity','adult','amenity','beach','camping','catering',
+      'commercial','education','entertainment','heritage','leisure','man_made',
+      'maritime','memorial','national_park','natural','pet','production',
+      'religion','rental','service','ski','sport','tourism','waterway'
+    ],
+    [
+      'airport','childcare','emergency','healthcare','office','parking',
+      'public_transport','railway'
+    ],
+    ['building','highway','power'],
+    ['administrative','low_emission_zone','political','populated_place','postal_code']
   ];
+  const GEOAPIFY_CATEGORY_ROOTS = GEOAPIFY_CATEGORY_BATCHES.flat();
 
   function allCategoryIds() {
     return Object.keys(CATEGORY_CONFIG);
@@ -104,6 +75,7 @@
     CATEGORY_CONFIG,
     DISCOVERY_FILTERS,
     IMMEDIATE_POI_RADIUS,
+    GEOAPIFY_CATEGORY_BATCHES,
     GEOAPIFY_CATEGORY_ROOTS,
     allCategoryIds,
     queryTokensForCategoryIds,

@@ -5,6 +5,7 @@ const path = require('node:path');
 const {
   CATEGORY_CONFIG,
   IMMEDIATE_POI_RADIUS,
+  GEOAPIFY_CATEGORY_BATCHES,
   GEOAPIFY_CATEGORY_ROOTS,
   allCategoryIds,
   queryTokensForCategoryIds,
@@ -46,15 +47,30 @@ test('Endless discovery supports every Geoapify top-level Places category', () =
     'public_transport','railway','religion','rental','service','ski','sport','tourism','waterway'
   ];
   assert.deepEqual([...GEOAPIFY_CATEGORY_ROOTS].sort(), expectedRoots.sort());
+  assert.equal(new Set(GEOAPIFY_CATEGORY_ROOTS).size, GEOAPIFY_CATEGORY_ROOTS.length);
+});
+
+test('locality categories cannot monopolise the POI response batch', () => {
+  const populatedBatch = GEOAPIFY_CATEGORY_BATCHES.find(batch => batch.includes('populated_place'));
+  const tourismBatch = GEOAPIFY_CATEGORY_BATCHES.find(batch => batch.includes('tourism'));
+  assert.ok(populatedBatch);
+  assert.ok(tourismBatch);
+  assert.notEqual(populatedBatch, tourismBatch);
+  assert.deepEqual(populatedBatch, ['administrative','low_emission_zone','political','populated_place','postal_code']);
 });
 
 test('Endless discovery defaults to nearest and does not exclude close candidates', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
   assert.match(source, /discoverySort: 'nearest'/);
-  assert.match(source, /S\.mode === 'just_walk'\) return GEOAPIFY_CATEGORY_ROOTS/);
+  assert.match(source, /GEOAPIFY_CATEGORY_BATCHES\.map/);
+  assert.match(source, /namedOnly: true/);
+  assert.match(source, /conditions=named/);
+  assert.match(source, /geoapifySearch\(S\.user, IMMEDIATE_POI_RADIUS/);
   assert.match(source, /S\.mode !== 'just_walk' && S\.terrain === 'paved'/);
   assert.match(source, /S\.mode === 'just_walk' \|\| x\.dist >= min/);
+  assert.match(source, /place\.dist <= IMMEDIATE_POI_RADIUS \|\| S\.discoveryFilter/);
   assert.match(source, /bias=proximity:/);
+  assert.match(source, /lat:54\.955014,lon:-1\.880329/);
 });
 
 test('Mystery Walk has no vibe setup or runtime dependency', () => {
