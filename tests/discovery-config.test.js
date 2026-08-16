@@ -9,6 +9,7 @@ const {
   ENDLESS_POI_CATEGORY_BATCHES,
   ENDLESS_POI_QUERY_TOKENS,
   deduplicatePlaces,
+  isEndlessDestination,
   allCategoryIds,
   queryTokensForCategoryIds,
   categoryGroupFromCategories
@@ -61,6 +62,7 @@ test('Endless excludes residences, streets, boundaries and infrastructure', () =
   excluded.forEach(category => assert.ok(!ENDLESS_POI_QUERY_TOKENS.includes(category), category));
   assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('building.historic'));
   assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('education.library'));
+  assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('public_transport.train'));
   assert.ok(ENDLESS_POI_QUERY_TOKENS.includes('service.post.office'));
   assert.ok(!ENDLESS_POI_QUERY_TOKENS.includes('accommodation'));
   assert.ok(!ENDLESS_POI_QUERY_TOKENS.includes('accommodation.apartment'));
@@ -79,13 +81,21 @@ test('duplicate provider records collapse by name and nearby coordinates', () =>
   assert.deepEqual(unique.map(place => place.origId), ['poi','tower','other-branch']);
 });
 
+test('raw river-system line segments are not Endless destinations', () => {
+  assert.equal(isEndlessDestination(['natural.water.river_system','waterway','waterway.river_system']), false);
+  assert.equal(isEndlessDestination(['natural.water.river_system','tourism.attraction']), true);
+  assert.equal(isEndlessDestination(['natural.mountain.peak']), true);
+});
+
 test('Endless discovery defaults to nearest and does not exclude close candidates', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
   assert.match(source, /discoverySort: 'nearest'/);
   assert.match(source, /ENDLESS_POI_CATEGORY_BATCHES\.map/);
+  assert.match(source, /queryTokens: queryTokensForCategoryIds\(allCategoryIds\(\)\)/);
   assert.match(source, /namedOnly: true/);
   assert.match(source, /if \(namedOnly && !explicitName\) return null/);
   assert.match(source, /S\.candidates = deduplicatePlaces/);
+  assert.match(source, /!isEndlessDestination\(props\.categories/);
   assert.match(source, /conditions=named/);
   assert.match(source, /geoapifySearch\(S\.user, IMMEDIATE_POI_RADIUS/);
   assert.match(source, /S\.mode !== 'just_walk' && S\.terrain === 'paved'/);

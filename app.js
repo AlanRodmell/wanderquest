@@ -5,6 +5,7 @@ const {
   ENDLESS_POI_CATEGORY_BATCHES,
   ENDLESS_POI_QUERY_TOKENS,
   deduplicatePlaces,
+  isEndlessDestination,
   allCategoryIds,
   queryTokensForCategoryIds,
   categoryGroupFromCategories
@@ -810,6 +811,7 @@ async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyT
       const props = f.properties || {};
       const explicitName = String(props.name || '').trim();
       if (namedOnly && !explicitName) return null;
+      if (S.mode === 'just_walk' && !isEndlessDestination(props.categories || [])) return null;
 
       // Terrain Filtering
       if (applyTerrainFilter && S.mode !== 'just_walk' && S.terrain === 'paved' && props.categories) {
@@ -1063,11 +1065,21 @@ function cacheValid(){
 
 async function fetchCandidates(radius = BREADCRUMB_RADIUS){
  const searches = S.mode === 'just_walk'
-   ? ENDLESS_POI_CATEGORY_BATCHES.map(queryTokens => geoapifySearch(S.user, radius, {
-       queryTokens,
-       applyTerrainFilter: false,
-       namedOnly: true
-     }))
+   ? [
+       // Start with the same focused categories as a default Mystery tour. Very
+       // broad category batches can hit Geoapify's result cap with map features
+       // before useful destinations such as museums and pubs are returned.
+       geoapifySearch(S.user, radius, {
+         queryTokens: queryTokensForCategoryIds(allCategoryIds()),
+         applyTerrainFilter: false,
+         namedOnly: true
+       }),
+       ...ENDLESS_POI_CATEGORY_BATCHES.map(queryTokens => geoapifySearch(S.user, radius, {
+         queryTokens,
+         applyTerrainFilter: false,
+         namedOnly: true
+       }))
+     ]
    : [geoapifySearch(S.user, radius)];
  if (S.mode === 'just_walk') {
    searches.push(geoapifySearch(S.user, IMMEDIATE_POI_RADIUS, {
