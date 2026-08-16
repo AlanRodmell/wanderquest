@@ -2,6 +2,7 @@ const {
   CATEGORY_CONFIG,
   DISCOVERY_FILTERS,
   IMMEDIATE_POI_RADIUS,
+  GEOAPIFY_CATEGORY_BATCHES,
   GEOAPIFY_CATEGORY_ROOTS,
   allCategoryIds,
   queryTokensForCategoryIds,
@@ -284,7 +285,7 @@ function setDevLocation(p,label,buttonId){
  $(buttonId).classList.add('active');$('settingsPanel').classList.add('hidden');toast(`Developer location: ${label}`);
 }
 $('realLocationBtn').onclick=()=>{DEV_MODE=false;document.querySelectorAll('#settingsPanel .dev-row button').forEach(b=>b.classList.remove('active'));$('realLocationBtn').classList.add('active');if(!$('walk').classList.contains('hidden'))startLocationWatch();toast('Real GPS enabled')};
-$('neLocationBtn').onclick=()=>setDevLocation({lat:54.948,lon:-1.921,accuracy:25},'NE43 7DL','neLocationBtn');
+$('neLocationBtn').onclick=()=>setDevLocation({lat:54.955014,lon:-1.880329,accuracy:25},'NE43 7DL','neLocationBtn');
 $('londonLocationBtn').onclick=()=>setDevLocation({lat:51.5074,lon:-0.1278,accuracy:25},'London','londonLocationBtn');
 
 // Options selection
@@ -301,7 +302,6 @@ function availableCategoryIds() { return allCategoryIds(); }
 function defaultCategoryIds() { return allCategoryIds(); }
 
 function selectedQueryTokens() {
-  if (S.mode === 'just_walk') return GEOAPIFY_CATEGORY_ROOTS;
   return queryTokensForCategoryIds(S.selectedCategories);
 }
 
@@ -779,14 +779,15 @@ function stopCompass() {
 }
 
 // GEOAPIFY FETCHING
-async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyTerrainFilter = true} = {}){
+async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyTerrainFilter = true, namedOnly = false} = {}){
   const key = localStorage.getItem(STORAGE_KEYS.apiKey);
   if(!key) throw new Error('API key missing. Open settings to add it.');
 
   const cats = queryTokens.join(',');
   if (!cats) throw new Error('Choose at least one destination category.');
 
-  const url = `https://api.geoapify.com/v2/places?categories=${encodeURIComponent(cats)}&filter=circle:${p.lon},${p.lat},${r}&bias=proximity:${p.lon},${p.lat}&limit=500&apiKey=${encodeURIComponent(key.trim())}`;
+  const conditions = namedOnly ? '&conditions=named' : '';
+  const url = `https://api.geoapify.com/v2/places?categories=${encodeURIComponent(cats)}&filter=circle:${p.lon},${p.lat},${r}&bias=proximity:${p.lon},${p.lat}${conditions}&limit=500&apiKey=${encodeURIComponent(key.trim())}`;
 
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 15000);
@@ -1058,7 +1059,13 @@ function cacheValid(){
 }
 
 async function fetchCandidates(radius = BREADCRUMB_RADIUS){
- const searches = [geoapifySearch(S.user, radius)];
+ const searches = S.mode === 'just_walk'
+   ? GEOAPIFY_CATEGORY_BATCHES.map(queryTokens => geoapifySearch(S.user, radius, {
+       queryTokens,
+       applyTerrainFilter: false,
+       namedOnly: true
+     }))
+   : [geoapifySearch(S.user, radius)];
  if (S.mode === 'just_walk') {
    searches.push(geoapifySearch(S.user, IMMEDIATE_POI_RADIUS, {
      queryTokens: GEOAPIFY_CATEGORY_ROOTS,
@@ -1163,7 +1170,7 @@ function discoveryResults() {
     .map(place => ({...place, dist: dist(S.user, place)}))
     .filter(place => !S.used.has(placeKey(place)))
     .filter(place => place.dist <= S.discoveryRange)
-    .filter(place => S.discoveryFilter === 'all' || categoryGroup(place) === S.discoveryFilter);
+    .filter(place => place.dist <= IMMEDIATE_POI_RADIUS || S.discoveryFilter === 'all' || categoryGroup(place) === S.discoveryFilter);
 
   if (S.discoverySort === 'nearest') results.sort((a, b) => a.dist - b.dist);
   if (S.discoverySort === 'unusual') {
