@@ -53,7 +53,9 @@
       'tourism','waterway','building.historic'
     ],
     [
-      'accommodation','catering','commercial.antiques','commercial.art',
+      'accommodation.chalet','accommodation.guest_house','accommodation.hostel',
+      'accommodation.hotel','accommodation.hut','accommodation.motel','catering',
+      'commercial.antiques','commercial.art',
       'commercial.books','commercial.food_and_drink','commercial.gift_and_souvenir',
       'commercial.hobby','commercial.marketplace','commercial.second_hand',
       'production.beekeeper','production.brewery','production.cheese',
@@ -62,6 +64,46 @@
     ['education.library','education.college','education.university','service.post.office']
   ];
   const ENDLESS_POI_QUERY_TOKENS = ENDLESS_POI_CATEGORY_BATCHES.flat();
+
+  function normalizedPlaceName(value) {
+    return String(value || '')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/[’']/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  function metresBetween(a, b) {
+    const toRadians = value => value * Math.PI / 180;
+    const lat1 = toRadians(Number(a.lat));
+    const lat2 = toRadians(Number(b.lat));
+    const deltaLat = lat2 - lat1;
+    const deltaLon = toRadians(Number(b.lon) - Number(a.lon));
+    const h = Math.sin(deltaLat / 2) ** 2
+      + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
+    return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  }
+
+  function deduplicatePlaces(places = [], nearbyMetres = 75) {
+    const byId = new Set();
+    const byName = new Map();
+    const unique = [];
+    const ordered = [...places].sort((a, b) => (Number(a.dist) || Infinity) - (Number(b.dist) || Infinity));
+
+    ordered.forEach(place => {
+      if (place.origId && byId.has(place.origId)) return;
+      const name = normalizedPlaceName(place.name);
+      const matches = name ? (byName.get(name) || []) : [];
+      if (matches.some(existing => metresBetween(existing, place) <= nearbyMetres)) return;
+      if (place.origId) byId.add(place.origId);
+      if (name) byName.set(name, [...matches, place]);
+      unique.push(place);
+    });
+    return unique;
+  }
 
   function allCategoryIds() {
     return Object.keys(CATEGORY_CONFIG);
@@ -88,6 +130,7 @@
     GEOAPIFY_CATEGORY_ROOTS,
     ENDLESS_POI_CATEGORY_BATCHES,
     ENDLESS_POI_QUERY_TOKENS,
+    deduplicatePlaces,
     allCategoryIds,
     queryTokensForCategoryIds,
     categoryGroupFromCategories

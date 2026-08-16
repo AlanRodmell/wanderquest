@@ -4,6 +4,7 @@ const {
   IMMEDIATE_POI_RADIUS,
   ENDLESS_POI_CATEGORY_BATCHES,
   ENDLESS_POI_QUERY_TOKENS,
+  deduplicatePlaces,
   allCategoryIds,
   queryTokensForCategoryIds,
   categoryGroupFromCategories
@@ -807,6 +808,8 @@ async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyT
 
     return data.features.map(f => {
       const props = f.properties || {};
+      const explicitName = String(props.name || '').trim();
+      if (namedOnly && !explicitName) return null;
 
       // Terrain Filtering
       if (applyTerrainFilter && S.mode !== 'just_walk' && S.terrain === 'paved' && props.categories) {
@@ -821,7 +824,7 @@ async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyT
       };
       if (!Number.isFinite(c.lat) || !Number.isFinite(c.lon)) return null;
 
-      const locationName = props.name || props.street || props.formatted || 'Local Discovery';
+      const locationName = explicitName || props.street || props.formatted || 'Local Discovery';
 
       return {
         ...c,
@@ -1069,13 +1072,12 @@ async function fetchCandidates(radius = BREADCRUMB_RADIUS){
  if (S.mode === 'just_walk') {
    searches.push(geoapifySearch(S.user, IMMEDIATE_POI_RADIUS, {
      queryTokens: ENDLESS_POI_QUERY_TOKENS,
-     applyTerrainFilter: false
+     applyTerrainFilter: false,
+     namedOnly: true
    }));
  }
  const results = await Promise.all(searches);
- const candidates = new Map();
- results.flat().forEach(place => candidates.set(placeKey(place), place));
- S.candidates = Array.from(candidates.values());
+ S.candidates = deduplicatePlaces(results.flat());
  S.candidatesOrigin = S.user;
  S.candidatesRadius = radius;
 }
