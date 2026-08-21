@@ -92,10 +92,89 @@
     };
   }
 
+  function routeCoordinates(data) {
+    const geometry = data?.features?.[0]?.geometry;
+    if (!geometry) return [];
+    const lines = geometry.type === 'LineString' ? [geometry.coordinates]
+      : geometry.type === 'MultiLineString' ? geometry.coordinates
+        : [];
+    return lines.flat().map(coordinates => ({
+      lat:Number(coordinates?.[1]),
+      lon:Number(coordinates?.[0])
+    })).filter(validPoint);
+  }
+
+  function distanceToSegment(point, start, end) {
+    if (!validPoint(point) || !validPoint(start) || !validPoint(end)) return Infinity;
+    const referenceLat = Number(point.lat) * Math.PI / 180;
+    const metresPerLonDegree = 111320 * Math.cos(referenceLat);
+    const metresPerLatDegree = 110540;
+    const ax = (Number(start.lon) - Number(point.lon)) * metresPerLonDegree;
+    const ay = (Number(start.lat) - Number(point.lat)) * metresPerLatDegree;
+    const bx = (Number(end.lon) - Number(point.lon)) * metresPerLonDegree;
+    const by = (Number(end.lat) - Number(point.lat)) * metresPerLatDegree;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lengthSquared = dx * dx + dy * dy;
+    const ratio = lengthSquared ? Math.min(1, Math.max(0, -(ax * dx + ay * dy) / lengthSquared)) : 0;
+    return Math.hypot(ax + dx * ratio, ay + dy * ratio);
+  }
+
+  function routeSteps(data) {
+    const properties = data?.features?.[0]?.properties || {};
+    const legs = Array.isArray(properties.legs) ? properties.legs : [];
+    return legs.flatMap(leg => Array.isArray(leg.steps) ? leg.steps : []).map(step => {
+      const instruction = typeof step.instruction === 'string' ? step.instruction
+        : step.instruction?.text || step.instruction?.transition_instruction
+          || step.text || step.name || 'Continue along the highlighted route.';
+      const fromIndex = Number(step.from_index ?? step.fromIndex ?? 0);
+      const toIndex = Number(step.to_index ?? step.toIndex ?? fromIndex);
+      return {
+        instruction,
+        fromIndex:Number.isFinite(fromIndex) ? fromIndex : 0,
+        toIndex:Number.isFinite(toIndex) ? toIndex : fromIndex,
+        distance:Number(step.distance) || 0
+      };
+    });
+  }
+
+  function routeGuidance(data, location) {
+    const coordinates = routeCoordinates(data);
+    if (!coordinates.length || !validPoint(location)) return null;
+    let nearestIndex = 0;
+    let nearestDistance = Infinity;
+    coordinates.forEach((coordinate, index) => {
+      const distance = metresBetween(location, coordinate);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    });
+    let offRouteDistance = nearestDistance;
+    for (let index = 1; index < coordinates.length; index++) {
+      offRouteDistance = Math.min(offRouteDistance,distanceToSegment(location,coordinates[index - 1],coordinates[index]));
+    }
+    const progress = coordinates.length > 1 ? nearestIndex / (coordinates.length - 1) : 1;
+    const steps = routeSteps(data);
+    const step = steps.find(candidate => candidate.toIndex >= nearestIndex) || steps[steps.length - 1] || null;
+    const cuePoint = step ? coordinates[Math.min(coordinates.length - 1,Math.max(0,step.toIndex))] : null;
+    const totalDistance = Number(data?.features?.[0]?.properties?.distance) || 0;
+    return {
+      instruction:step?.instruction || 'Continue along the highlighted route.',
+      distanceToCue:cuePoint ? metresBetween(location,cuePoint) : 0,
+      offRouteDistance,
+      progress:Math.min(1,Math.max(0,progress)),
+      remainingDistance:Math.max(0,totalDistance * (1 - progress)),
+      nearestIndex
+    };
+  }
+
   return {
     metresBetween,
     distanceRouteCheckpoints,
     checkpointArrivalRadius,
-    advanceDistanceCheckpoint
+    advanceDistanceCheckpoint,
+    routeCoordinates,
+    routeGuidance
   };
 }));

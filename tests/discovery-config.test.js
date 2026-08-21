@@ -11,6 +11,8 @@ const {
   deduplicatePlaces,
   effectiveCandidateRadius,
   collectSuccessfulPlaceSearches,
+  serendipityProfile,
+  serendipityScore,
   isEndlessDestination,
   allCategoryIds,
   queryTokensForCategoryIds,
@@ -107,6 +109,15 @@ test('partial place-search failures keep successful result batches', () => {
   assert.deepEqual(collected.places.map(place => place.name), ['Museum','Park','Cafe']);
   assert.deepEqual(collected.errors, [failure]);
   assert.equal(collected.successCount, 2);
+});
+
+test('Serendipity Dial moves selection from nearby to unusual places', () => {
+  const nearby = {name:'Corner Cafe',categories:['catering.cafe']};
+  const unusual = {name:'Hidden Curiosity',categories:['commercial.antiques']};
+  assert.ok(serendipityScore(nearby,100,10,.5)>serendipityScore(unusual,5000,10,.5));
+  assert.ok(serendipityScore(unusual,5000,90,.5)>serendipityScore(nearby,100,90,.5));
+  assert.equal(serendipityProfile(50).label,'Balanced');
+  assert.ok(serendipityProfile(90).surprisePool>serendipityProfile(10).surprisePool);
 });
 
 test('raw river-system line segments are not Endless destinations', () => {
