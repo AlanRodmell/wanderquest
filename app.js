@@ -7,6 +7,8 @@ const {
   deduplicatePlaces,
   effectiveCandidateRadius,
   collectSuccessfulPlaceSearches,
+  serendipityProfile,
+  serendipityScore,
   isEndlessDestination,
   allCategoryIds,
   queryTokensForCategoryIds,
@@ -14,7 +16,8 @@ const {
 } = globalThis.WanderQuestDiscovery;
 const {
   distanceRouteCheckpoints,
-  advanceDistanceCheckpoint
+  advanceDistanceCheckpoint,
+  routeGuidance
 } = globalThis.WanderQuestRouteProgress;
 
 const STORAGE_KEYS = {
@@ -92,7 +95,12 @@ const S = {
   distancePlaces: [],
   distancePlan: null,
   distanceSeed: 0,
-  distanceCheckpointIndex: 0
+  distanceCheckpointIndex: 0,
+  serendipity: 50,
+  guidedMode: true,
+  routeData: null,
+  offRouteAlerted: false,
+  editingJournalIndex: -1
 };
 
 let busy = false; let DEV_MODE = false; let DEV_LOCATION = {lat:53.4084,lon:-2.9916,accuracy:25};
@@ -101,6 +109,15 @@ let distancePreviewLayer = null;
 let distancePreviewMarker = null;
 let distanceGenerationController = null;
 let candidateSearchController = null;
+let walkWakeLock = null;
+let journalDbPromise = null;
+let journalRenderToken = 0;
+let journalObjectUrls = [];
+let editorPhotoUrl = null;
+let pendingJournalPhoto = null;
+let removePendingJournalPhoto = false;
+let journalEditorRating = 0;
+let journalEditorFavourite = false;
 function guarded(fn){return async(...a)=>{if(busy)return;busy=true;try{await fn(...a)}finally{busy=false}}}
 const $ = id => document.getElementById(id);
 
@@ -208,7 +225,7 @@ function loadHistory() {
 function saveHistory() {
   try {
     localStorage.setItem(STORAGE_KEYS.history, JSON.stringify({
-      version: 2,
+      version: 3,
       journal: S.journal
     }));
   } catch(e) {}
@@ -238,7 +255,9 @@ function activeQuestSnapshot() {
     distanceAmount: S.distanceAmount,
     distanceUnit: S.distanceUnit,
     distancePlan: S.mode === 'distance' ? S.distancePlan : null,
-    distanceCheckpointIndex: S.mode === 'distance' ? S.distanceCheckpointIndex : 0
+    distanceCheckpointIndex: S.mode === 'distance' ? S.distanceCheckpointIndex : 0,
+    serendipity:S.serendipity,
+    guidedMode:S.guidedMode
   };
 }
 
@@ -325,7 +344,9 @@ function savePreferences() {
       setupMode:S.setupMode,
       distanceShape:S.distanceShape,
       distanceAmount:S.distanceAmount,
-      distanceUnit:S.distanceUnit
+      distanceUnit:S.distanceUnit,
+      serendipity:S.serendipity,
+      guidedMode:S.guidedMode
     }));
   } catch (error) {}
   updateWizardSummary();
@@ -344,6 +365,8 @@ function loadPreferences() {
     if (['loop','outback','point'].includes(saved.distanceShape)) S.distanceShape = saved.distanceShape;
     if (['mi','km'].includes(saved.distanceUnit)) S.distanceUnit = saved.distanceUnit;
     if (Number.isFinite(Number(saved.distanceAmount))) S.distanceAmount = Math.min(30,Math.max(.5,Number(saved.distanceAmount)));
+    if (Number.isFinite(Number(saved.serendipity))) S.serendipity = Math.min(100,Math.max(0,Number(saved.serendipity)));
+    if (typeof saved.guidedMode === 'boolean') S.guidedMode = saved.guidedMode;
     S.maxStops=S.minutes<=30?3:S.minutes<=60?5:S.minutes<=90?7:9;
   } catch (error) {}
 }
@@ -372,6 +395,25 @@ function renderCategoryFilters() {
 
 loadPreferences();
 renderCategoryFilters();
+
+function renderExperienceControls() {
+  const profile=serendipityProfile(S.serendipity);
+  $('serendipityDial').value=String(profile.level);
+  $('serendipityValue').textContent=`${profile.label} · ${profile.level}`;
+  $('guidedModeToggle').classList.toggle('selected',S.guidedMode);
+  $('guidedModeToggle').setAttribute('aria-pressed',String(S.guidedMode));
+  $('guidedModeStatus').textContent=S.guidedMode?'ON':'OFF';
+  $('guidedTop').style.color=S.guidedMode?'var(--acid)':'';
+}
+
+$('serendipityDial').oninput=event=>{
+  S.serendipity=Number(event.target.value);
+  renderExperienceControls();
+  savePreferences();
+};
+$('guidedModeToggle').onclick=()=>setGuidedMode(!S.guidedMode);
+$('guidedTop').onclick=()=>setGuidedMode(!S.guidedMode,true);
+renderExperienceControls();
 document.querySelectorAll('.duration').forEach(button => {
   const selected = Number(button.dataset.min) === S.minutes;
   button.classList.toggle('selected',selected);
@@ -507,6 +549,8 @@ function updateWizardSummary() {
   summary.innerHTML = `
     <div class="wizard-summary-row"><span>Route</span><b>${esc(route)}</b></div>
     <div class="wizard-summary-row"><span>Destinations</span><b>${S.selectedCategories.length} categories</b></div>
+    <div class="wizard-summary-row"><span>Serendipity</span><b>${esc(serendipityProfile(S.serendipity).label)}</b></div>
+    <div class="wizard-summary-row"><span>Guidance</span><b>${S.guidedMode?'Guided mode':'Map only'}</b></div>
     <div class="wizard-summary-row"><span>Duration</span><b>${esc(durationLabel(S.minutes))}</b></div>`;
 }
 
@@ -542,6 +586,41 @@ showWizardStep(1, false);
 
 function toast(m){$('toast').textContent=m;$('toast').classList.remove('hidden');clearTimeout(toast.t);toast.t=setTimeout(()=>$('toast').classList.add('hidden'),2800)}
 
+function haptic(pattern=80) {
+  if(S.guidedMode&&navigator.vibrate)navigator.vibrate(pattern);
+}
+
+async function requestWalkWakeLock(force=false) {
+  if(!S.guidedMode||(!force&&$('walk').classList.contains('hidden'))||!navigator.wakeLock||walkWakeLock)return;
+  try{
+    walkWakeLock=await navigator.wakeLock.request('screen');
+    walkWakeLock.addEventListener('release',()=>{walkWakeLock=null},{once:true});
+  }catch(error){
+    walkWakeLock=null;
+  }
+}
+
+async function releaseWalkWakeLock() {
+  const current=walkWakeLock;
+  walkWakeLock=null;
+  if(current){try{await current.release()}catch(error){}}
+}
+
+function setGuidedMode(enabled,notify=false) {
+  S.guidedMode=Boolean(enabled);
+  renderExperienceControls();
+  savePreferences();
+  saveActiveQuest();
+  updateGuidance();
+  if(S.guidedMode)requestWalkWakeLock();
+  else releaseWalkWakeLock();
+  if(notify)toast(S.guidedMode?'Guided Walk Mode on':'Guided Walk Mode off');
+}
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible')requestWalkWakeLock();
+});
+
 window.addEventListener('error',ev=>{if(ev?.message)toast(ev.message)});
 window.addEventListener('unhandledrejection',ev=>{toast(ev?.reason?.message||String(ev?.reason||'Something went wrong.'))});
 
@@ -556,6 +635,51 @@ function dist(a,b){const R=6371000,p=Math.PI/180,d1=(b.lat-a.lat)*p,d2=(b.lon-a.
 function pointFrom(origin,degrees,metres){const R=6371000,d=metres/R,b=degrees*Math.PI/180,p1=origin.lat*Math.PI/180,l1=origin.lon*Math.PI/180,p2=Math.asin(Math.sin(p1)*Math.cos(d)+Math.cos(p1)*Math.sin(d)*Math.cos(b)),l2=l1+Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(p1),Math.cos(d)-Math.sin(p1)*Math.sin(p2));return{lat:p2*180/Math.PI,lon:((l2*180/Math.PI+540)%360)-180}}
 function fd(m){return m<1000?Math.round(m)+' m away':(m/1000).toFixed(1)+' km away'}
 function esc(s=''){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+function guidancePanelHtml() {
+  return `<div id="guidancePanel" class="guidance-panel ${S.guidedMode?'':'hidden'}" aria-live="polite">
+    <div class="guidance-head"><span id="guidanceKicker">Guided walk</span><b id="guidanceProgress">0%</b></div>
+    <strong id="guidanceInstruction">Finding your position on the route…</strong>
+    <small id="guidanceMeta"></small>
+    <div class="guidance-progress"><i id="guidanceProgressBar"></i></div>
+  </div>`;
+}
+
+function compactDistance(metres) {
+  return metres<1000?`${Math.max(0,Math.round(metres))} m`:`${(metres/1000).toFixed(1)} km`;
+}
+
+function updateGuidance(location=S.user) {
+  const panel=$('guidancePanel');
+  if(!panel)return;
+  panel.classList.toggle('hidden',!S.guidedMode);
+  if(!S.guidedMode)return;
+  const guidance=routeGuidance(S.routeData,location);
+  if(!guidance){
+    $('guidanceKicker').textContent='Guided walk';
+    $('guidanceInstruction').textContent='Building route guidance…';
+    $('guidanceMeta').textContent='Compass and map remain available.';
+    $('guidanceProgress').textContent='—';
+    $('guidanceProgressBar').style.width='0%';
+    return;
+  }
+  const threshold=Math.min(150,Math.max(60,(Number(location?.accuracy)||0)+35));
+  const offRoute=guidance.offRouteDistance>threshold;
+  const percent=Math.round(guidance.progress*100);
+  panel.classList.toggle('off-route',offRoute);
+  $('guidanceKicker').textContent=offRoute?`Off route · ${compactDistance(guidance.offRouteDistance)}`:'Guided walk';
+  $('guidanceInstruction').textContent=offRoute?'Return to the highlighted route.':guidance.instruction;
+  $('guidanceMeta').textContent=`${compactDistance(guidance.distanceToCue)} to cue · ${compactDistance(guidance.remainingDistance)} remaining`;
+  $('guidanceProgress').textContent=`${percent}%`;
+  $('guidanceProgressBar').style.width=`${percent}%`;
+  if(offRoute&&!S.offRouteAlerted){
+    S.offRouteAlerted=true;
+    haptic([180,80,180]);
+    toast('You appear to be off route. Check the highlighted line.');
+  }else if(!offRoute){
+    S.offRouteAlerted=false;
+  }
+}
 
 function estimatedWalkMinutes(metres) {
   return Math.max(1, Math.ceil((metres * ROUTE_DISTANCE_FACTOR) / WALKING_METRES_PER_MINUTE));
@@ -657,7 +781,7 @@ function startLocationWatch() {
   });
 }
 
-window.addEventListener('pagehide', stopLocationWatch);
+window.addEventListener('pagehide',()=>{stopLocationWatch();releaseWalkWakeLock()});
 
 // Map Setup & Toggles
 const tilesMystery = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png';
@@ -678,6 +802,8 @@ function clearRoute() {
     S.map.removeLayer(routeLayer);
     routeLayer = null;
   }
+  S.routeData=null;
+  S.offRouteAlerted=false;
 }
 
 async function initMap(p){
@@ -905,6 +1031,8 @@ async function fetchRoute(start, end) {
     nextRouteLayer.addTo(S.map);
     if (routeLayer && S.map) S.map.removeLayer(routeLayer);
     routeLayer = nextRouteLayer;
+    S.routeData = data;
+    S.offRouteAlerted=false;
     S.routeMinutes = nextRouteMinutes;
     update();
     return true;
@@ -1157,27 +1285,231 @@ function formatJournalDate(value) {
   return new Intl.DateTimeFormat(undefined, {day:'numeric',month:'short',year:'numeric'}).format(date);
 }
 
-function renderJournal() {
-  const entries = [...S.journal].reverse();
-  $('journalList').innerHTML = entries.length ? entries.map(place => `
-    <article class="journal-item">
+function ensureJournalEntryId(place) {
+  if(!place.entryId)place.entryId=globalThis.crypto?.randomUUID?.()||`memory-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return place.entryId;
+}
+
+function openJournalDb() {
+  if(journalDbPromise)return journalDbPromise;
+  journalDbPromise=new Promise((resolve,reject)=>{
+    if(!globalThis.indexedDB)return reject(new Error('Photo storage is unavailable in this browser.'));
+    const request=indexedDB.open('wanderquest-journal-media',1);
+    request.onupgradeneeded=()=>{
+      if(!request.result.objectStoreNames.contains('photos'))request.result.createObjectStore('photos');
+    };
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error||new Error('Could not open photo storage.'));
+  });
+  return journalDbPromise;
+}
+
+async function getJournalPhoto(entryId) {
+  try{
+    const db=await openJournalDb();
+    return await new Promise((resolve,reject)=>{
+      const request=db.transaction('photos').objectStore('photos').get(entryId);
+      request.onsuccess=()=>resolve(request.result||null);
+      request.onerror=()=>reject(request.error);
+    });
+  }catch(error){return null}
+}
+
+async function putJournalPhoto(entryId,blob) {
+  const db=await openJournalDb();
+  await new Promise((resolve,reject)=>{
+    const transaction=db.transaction('photos','readwrite');
+    transaction.objectStore('photos').put(blob,entryId);
+    transaction.oncomplete=resolve;
+    transaction.onerror=()=>reject(transaction.error);
+  });
+}
+
+async function deleteJournalPhoto(entryId) {
+  try{
+    const db=await openJournalDb();
+    await new Promise((resolve,reject)=>{
+      const transaction=db.transaction('photos','readwrite');
+      transaction.objectStore('photos').delete(entryId);
+      transaction.oncomplete=resolve;
+      transaction.onerror=()=>reject(transaction.error);
+    });
+  }catch(error){}
+}
+
+async function clearJournalPhotos() {
+  try{
+    const db=await openJournalDb();
+    await new Promise((resolve,reject)=>{
+      const transaction=db.transaction('photos','readwrite');
+      transaction.objectStore('photos').clear();
+      transaction.oncomplete=resolve;
+      transaction.onerror=()=>reject(transaction.error);
+    });
+  }catch(error){}
+}
+
+function loadImageFile(file) {
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const image=new Image();
+    image.onload=()=>{URL.revokeObjectURL(url);resolve(image)};
+    image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('That photo could not be read.'))};
+    image.src=url;
+  });
+}
+
+async function resizeJournalPhoto(file) {
+  if(!file?.type?.startsWith('image/'))throw new Error('Choose an image file.');
+  const image=await loadImageFile(file);
+  const scale=Math.min(1,1280/Math.max(image.naturalWidth,image.naturalHeight));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));
+  canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+  canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+  return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('That photo could not be prepared.')),'image/jpeg',.78));
+}
+
+function releaseJournalObjectUrls() {
+  journalObjectUrls.forEach(url=>URL.revokeObjectURL(url));
+  journalObjectUrls=[];
+}
+
+async function renderJournal() {
+  const token=++journalRenderToken;
+  releaseJournalObjectUrls();
+  let migrated=false;
+  const entries=S.journal.map((place,index)=>{
+    if(!place.entryId)migrated=true;
+    ensureJournalEntryId(place);
+    return {place,index};
+  }).reverse();
+  $('journalList').innerHTML = entries.length ? entries.map(({place,index}) => `
+    <article class="journal-item" data-journal-entry="${index}">
+      <img class="journal-card-photo hidden" data-journal-photo="${esc(place.entryId)}" alt="Photo from ${esc(place.name||'this discovery')}">
       <div class="journal-item-head"><b>${esc(place.name || 'Local discovery')}</b><time>${esc(formatJournalDate(place.discoveredAt))}</time></div>
-      <div class="journal-tags"><span class="journal-tag">${esc(categoryLabel(place))}</span><span class="journal-tag">${place.questMode === 'just_walk' ? 'Endless' : 'Mystery'}</span>${place.givenUp ? '<span class="journal-tag">Revealed</span>' : ''}</div>
-      <p>${esc(place.cachedDesc || blurb(place))}</p>
+      <div class="journal-tags"><span class="journal-tag">${esc(categoryLabel(place))}</span><span class="journal-tag">${place.questMode === 'just_walk' ? 'Endless' : 'Mystery'}</span>${Number.isFinite(Number(place.serendipity))?`<span class="journal-tag">${esc(serendipityProfile(place.serendipity).label)}</span>`:''}${place.givenUp ? '<span class="journal-tag">Revealed</span>' : ''}${place.rating?`<span class="journal-tag journal-stars">${'★'.repeat(place.rating)}</span>`:''}</div>
+      <p>${esc(place.note || place.cachedDesc || blurb(place))}</p>
+      <div class="journal-item-actions"><button class="journal-favourite ${place.favourite?'active':''}" data-journal-favourite="${index}" type="button" aria-label="${place.favourite?'Remove from':'Add to'} favourites" aria-pressed="${Boolean(place.favourite)}">${place.favourite?'♥':'♡'}</button><button class="journal-edit-btn" data-journal-edit="${index}" type="button">${place.note||place.rating||place.hasPhoto?'EDIT MEMORY':'ADD MEMORY'}</button></div>
     </article>`).join('') : '<div class="journal-empty">No discoveries yet. Complete a destination and it will appear here.</div>';
+  if(migrated)saveHistory();
   $('clearJournalBtn').classList.toggle('hidden', !entries.length);
+  document.querySelectorAll('[data-journal-edit]').forEach(button=>button.onclick=()=>openJournalEditor(Number(button.dataset.journalEdit)));
+  document.querySelectorAll('[data-journal-favourite]').forEach(button=>button.onclick=()=>{
+    const place=S.journal[Number(button.dataset.journalFavourite)];
+    if(!place)return;
+    place.favourite=!place.favourite;
+    saveHistory();
+    renderJournal();
+  });
+  await Promise.all(entries.filter(({place})=>place.hasPhoto).map(async({place})=>{
+    const blob=await getJournalPhoto(place.entryId);
+    if(!blob||token!==journalRenderToken)return;
+    const image=document.querySelector(`[data-journal-photo="${CSS.escape(place.entryId)}"]`);
+    if(!image)return;
+    const url=URL.createObjectURL(blob);
+    journalObjectUrls.push(url);
+    image.src=url;
+    image.classList.remove('hidden');
+  }));
+}
+
+function renderJournalEditorRating() {
+  document.querySelectorAll('[data-journal-rating]').forEach(button=>{
+    const active=Number(button.dataset.journalRating)<=journalEditorRating;
+    button.classList.toggle('active',active);
+    button.setAttribute('aria-pressed',String(active));
+  });
+  $('journalFavouriteBtn').classList.toggle('active',journalEditorFavourite);
+  $('journalFavouriteBtn').setAttribute('aria-pressed',String(journalEditorFavourite));
+  $('journalFavouriteBtn').textContent=journalEditorFavourite?'♥ FAVOURITE':'♡ ADD TO FAVOURITES';
+}
+
+function showJournalEditorPhoto(blob) {
+  if(editorPhotoUrl)URL.revokeObjectURL(editorPhotoUrl);
+  editorPhotoUrl=blob?URL.createObjectURL(blob):null;
+  $('journalPhotoPreview').classList.toggle('hidden',!blob);
+  $('removeJournalPhotoBtn').classList.toggle('hidden',!blob);
+  $('journalPhotoPreviewImg').src=editorPhotoUrl||'';
+}
+
+async function openJournalEditor(index) {
+  const place=S.journal[index];
+  if(!place)return;
+  S.editingJournalIndex=index;
+  ensureJournalEntryId(place);
+  pendingJournalPhoto=null;
+  removePendingJournalPhoto=false;
+  journalEditorRating=Math.max(0,Math.min(5,Number(place.rating)||0));
+  journalEditorFavourite=Boolean(place.favourite);
+  $('journalEditorTitle').textContent=place.name||'Local discovery';
+  $('journalNoteInput').value=place.note||'';
+  $('journalPhotoInput').value='';
+  renderJournalEditorRating();
+  $('journalEditor').classList.remove('hidden');
+  showJournalEditorPhoto(place.hasPhoto?await getJournalPhoto(place.entryId):null);
+  $('journalEditor').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function closeJournalEditor() {
+  S.editingJournalIndex=-1;
+  pendingJournalPhoto=null;
+  removePendingJournalPhoto=false;
+  showJournalEditorPhoto(null);
+  $('journalEditor').classList.add('hidden');
 }
 
 function openJournal() {
+  closeJournalEditor();
   renderJournal();
   $('home').classList.add('hidden');
   $('journal').classList.remove('hidden');
 }
 
 function closeJournal() {
+  closeJournalEditor();
   $('journal').classList.add('hidden');
   $('home').classList.remove('hidden');
 }
+
+document.querySelectorAll('[data-journal-rating]').forEach(button=>button.onclick=()=>{
+  const rating=Number(button.dataset.journalRating);
+  journalEditorRating=journalEditorRating===rating?0:rating;
+  renderJournalEditorRating();
+});
+$('journalFavouriteBtn').onclick=()=>{journalEditorFavourite=!journalEditorFavourite;renderJournalEditorRating()};
+$('closeJournalEditorBtn').onclick=closeJournalEditor;
+$('journalPhotoInput').onchange=async event=>{
+  const file=event.target.files?.[0];
+  if(!file)return;
+  try{
+    pendingJournalPhoto=await resizeJournalPhoto(file);
+    removePendingJournalPhoto=false;
+    showJournalEditorPhoto(pendingJournalPhoto);
+  }catch(error){toast(error.message)}
+};
+$('removeJournalPhotoBtn').onclick=()=>{
+  pendingJournalPhoto=null;
+  removePendingJournalPhoto=true;
+  showJournalEditorPhoto(null);
+};
+$('saveJournalEntryBtn').onclick=guarded(async()=>{
+  const place=S.journal[S.editingJournalIndex];
+  if(!place)return;
+  const button=$('saveJournalEntryBtn');
+  button.disabled=true;
+  try{
+    place.note=$('journalNoteInput').value.trim();
+    place.rating=journalEditorRating;
+    place.favourite=journalEditorFavourite;
+    if(removePendingJournalPhoto){await deleteJournalPhoto(place.entryId);place.hasPhoto=false}
+    else if(pendingJournalPhoto){await putJournalPhoto(place.entryId,pendingJournalPhoto);place.hasPhoto=true}
+    saveHistory();
+    closeJournalEditor();
+    await renderJournal();
+    toast('Memory saved');
+  }catch(error){toast(error.message||'Could not save that memory.')}finally{button.disabled=false}
+});
 
 // RUBBER BAND LOGIC & SCORING
 function sortCandidates(clean) {
@@ -1187,17 +1519,14 @@ function sortCandidates(clean) {
   const currentDistToStart = dist(S.user, S.startLoc);
 
   return clean.map(x => {
-    let score = Math.random(); // Keep a baseline of serendipity
+    const candidateDistance=Number.isFinite(Number(x.dist))?Number(x.dist):dist(S.user,x);
+    let score = serendipityScore(x,candidateDistance,S.serendipity);
 
     // Reward candidates that strongly match the selected destination categories.
     if (x.categories && x.categories.length > 0) {
         const categoryMatches = x.categories.filter(category => selectedQueryTokens().some(token => category.includes(token))).length;
         score += Math.min(categoryMatches, 3) * 0.5;
     }
-
-    // Reward rich metadata
-    if (x.tags && x.tags.wikipedia) score += 2.0;
-    if (x.name && x.name !== 'Local Discovery') score += 1.0;
 
     // Home returning urgency (preserved for Mystery mode)
     if (isReturningPhase) {
@@ -1283,7 +1612,10 @@ function renderDiscoveryBrowser() {
   document.querySelectorAll('[data-discovery-index]').forEach(button => button.onclick = () => selectDiscoveryTarget(Number(button.dataset.discoveryIndex)));
   $('surpriseBtn').onclick = () => {
     if (!results.length) return toast('No locations match these filters.');
-    S.visibleDiscoveries = [results[Math.floor(Math.random() * Math.min(results.length, 12))]];
+    const profile=serendipityProfile(S.serendipity);
+    const ranked=sortCandidates(results);
+    const pool=ranked.slice(0,Math.min(ranked.length,profile.surprisePool));
+    S.visibleDiscoveries = [pool[Math.floor(Math.random() * pool.length)]];
     selectDiscoveryTarget(0);
   };
   $('refreshDiscoveryBtn').onclick = guarded(async () => {
@@ -1311,6 +1643,7 @@ function update(){
  if(!S.user||!S.target)return;
  const dEl = $('distance');
  if(dEl) dEl.innerHTML=`${distLabel()} · ~${S.routeMinutes || estimatedWalkMinutes(dist(S.user,S.target))} min`;
+ updateGuidance(S.user);
  updateQuestClock();
 }
 
@@ -1400,6 +1733,8 @@ function setTargetFromPool() {
   S.target = S.sortedPool[S.poolIndex];
   S.used.add(placeKey(S.target));
   S.phase = isHome ? 'returning' : 'navigating';
+  S.routeData=null;
+  S.offRouteAlerted=false;
 
   targetMarker(S.target);
   focusMap(true);
@@ -1440,7 +1775,9 @@ function setTargetFromPool() {
   ${progressHtml}
   <h2 class="mystery-title">${title}</h2>
   <p class="mystery-copy">${copy}</p>
+  ${guidancePanelHtml()}
   ${actionsHtml}`;
+  updateGuidance();
 
   $('locateBtn').onclick=guarded(locate);
   $('rerouteBtn').onclick=guarded(reroute);
@@ -1465,6 +1802,8 @@ function selectDiscoveryTarget(idx) {
     if (!S.target) return toast('That location is no longer available.');
     S.used.add(placeKey(S.target));
     S.phase = 'navigating';
+    S.routeData=null;
+    S.offRouteAlerted=false;
 
     targetMarker(S.target);
     focusMap(true);
@@ -1478,6 +1817,7 @@ function selectDiscoveryTarget(idx) {
       <div class="statusline"><span>Discovery Route</span><div class="distance" id="distance">${distLabel()}</div></div>
       <h2 class="mystery-title">${displayName}</h2>
       <p class="mystery-copy">Follow the mapped route to your chosen destination.</p>
+      ${guidancePanelHtml()}
       <div class="actions navigation-actions">
         <button class="locate" id="locateBtn">⌖ Locate</button>
         <button class="reroute" id="rerouteBtn">↻ Re-route</button>
@@ -1488,6 +1828,7 @@ function selectDiscoveryTarget(idx) {
          <button class="btn-muted" id="giveUpBtn">⚐ Give Up</button>
       </div>
     `;
+    updateGuidance();
 
     $('locateBtn').onclick = guarded(locate);
     $('rerouteBtn').onclick = guarded(reroute);
@@ -1574,9 +1915,11 @@ function updateDistanceProgress(location,{notify=true}={}) {
    S.distanceCheckpointIndex=result.index;
    setDistancePlanMarkers(S.distancePlan);
    saveActiveQuest();
+   haptic([100,60,100]);
    if(notify)toast(result.complete?'Final checkpoint reached. Route ready to complete.':`${result.reached.label} reached. Next checkpoint marked.`);
  }
  updateDistanceProgressUi();
+ updateGuidance(location);
  return result;
 }
 
@@ -1607,6 +1950,8 @@ function applyDistancePlanToMap(plan) {
  nextLayer.addTo(S.map);
  if(routeLayer&&S.map)S.map.removeLayer(routeLayer);
  routeLayer=nextLayer;
+ S.routeData=plan.data;
+ S.offRouteAlerted=false;
  S.routeMinutes=Math.max(1,Math.ceil(plan.time/60));
  setDistancePlanMarkers(plan);
  S.map.fitBounds(routeLayer.getBounds(),{padding:[34,34]});
@@ -1626,6 +1971,7 @@ function renderDistanceNavigation() {
    <h2 class="mystery-title">Your route is ready.</h2>
    <p class="mystery-copy">${esc(instruction)}</p>
    <p class="mystery-copy" id="distanceProgressText">${esc(distanceProgressCopy(plan))}</p>
+   ${guidancePanelHtml()}
    <div class="route-plan-meta"><span>~${esc(durationLabel(Math.max(1,Math.round(plan.time/60))))}</span><span>${esc(S.terrain==='paved'?'Mostly paved':'Off-road / wild')}</span>${plan.place?`<span>${esc(plan.place.name)}</span>`:''}</div>
    <div class="actions navigation-actions distance-route-actions">
      <button class="locate" id="distanceLocateBtn">⌖ Locate</button>
@@ -1636,6 +1982,7 @@ function renderDistanceNavigation() {
  $('distanceRerouteBtn').onclick=guarded(rerouteDistanceRoute);
  $('distanceFinishBtn').onclick=guarded(finishDistanceRoute);
  updateDistanceProgressUi();
+ updateGuidance();
 }
 
 async function locateDistanceRoute() {
@@ -1682,6 +2029,7 @@ async function startDistanceExperience() {
  const button=$('startDistanceBtn');
  button.disabled=true;
  try{
+   requestWalkWakeLock(true);
    clearActiveQuest();
    S.mode='distance';
    S.setupMode='distance';
@@ -1708,6 +2056,7 @@ async function startDistanceExperience() {
    startLocationWatch();
    saveActiveQuest();
  }catch(e){
+   releaseWalkWakeLock();
    $('walk').classList.add('hidden');
    $('home').classList.remove('hidden');
    toast(e.message);
@@ -1810,6 +2159,8 @@ function reveal(isGiveUp = false){
  t.questId = S.questId;
  t.questMode = S.mode;
  t.selectedCategories = [...S.selectedCategories];
+ t.serendipity = S.serendipity;
+ ensureJournalEntryId(t);
  if (!isGiveUp) {
    t.challenge = getRandomPrompt();
  }
@@ -1817,6 +2168,7 @@ function reveal(isGiveUp = false){
  S.discovered.push(t);
  S.journal.push(t);
  S.phase = 'reveal';
+ haptic(isGiveUp?60:[120,70,220]);
  saveHistory(); // Persist discoveries
  saveActiveQuest();
 
@@ -1876,6 +2228,7 @@ function finish(){
  S.phase = 'finished';
  clearActiveQuest();
  stopLocationWatch();
+ releaseWalkWakeLock();
 
  const foundCount = S.discovered.filter(x => !x.givenUp).length;
 
@@ -1965,6 +2318,7 @@ async function launchExperience(mode) {
  $('startBtn').disabled=true;
  $('startEndlessBtn').disabled=true;
  try{
+  requestWalkWakeLock(true);
   S.mode = mode;
   if (mode === 'just_walk') {
     S.selectedCategories = allCategoryIds();
@@ -1994,6 +2348,7 @@ async function launchExperience(mode) {
   $('startBtn').disabled=false;
   $('startEndlessBtn').disabled=false;
  }catch(e){
+  releaseWalkWakeLock();
   $('walk').classList.add('hidden');$('home').classList.remove('hidden');
   $('startBtn').disabled=false;$('startEndlessBtn').disabled=false;
   toast(e.message);
@@ -2031,6 +2386,10 @@ async function resumeActiveQuest() {
     S.distanceUnit = saved.distanceUnit || 'mi';
     S.distancePlan = saved.distancePlan || null;
     S.distanceCheckpointIndex = Math.max(0, Number(saved.distanceCheckpointIndex) || 0);
+    S.serendipity = Number.isFinite(Number(saved.serendipity)) ? Math.min(100,Math.max(0,Number(saved.serendipity))) : S.serendipity;
+    if(typeof saved.guidedMode==='boolean')S.guidedMode=saved.guidedMode;
+    renderExperienceControls();
+    requestWalkWakeLock(true);
     S.distanceOrigin = saved.distancePlan?.origin || saved.startLoc || null;
     S.distancePlace = saved.distancePlan?.place || null;
     S.startLoc = saved.startLoc;
@@ -2076,6 +2435,7 @@ async function resumeActiveQuest() {
     }
     toast('Walk resumed');
   } catch (error) {
+    releaseWalkWakeLock();
     $('walk').classList.add('hidden');
     $('home').classList.remove('hidden');
     toast(error.message);
@@ -2113,12 +2473,14 @@ if ('serviceWorker' in navigator) {
 
 $('journalBtn').onclick=openJournal;
 $('closeJournalBtn').onclick=closeJournal;
-$('clearJournalBtn').onclick=()=>{
+$('clearJournalBtn').onclick=guarded(async()=>{
   if (!confirm('Clear every saved discovery from this device?')) return;
   S.journal=[];
   saveHistory();
-  renderJournal();
-};
+  await clearJournalPhotos();
+  closeJournalEditor();
+  await renderJournal();
+});
 $('resumeBtn').onclick=resumeActiveQuest;
 $('discardResumeBtn').onclick=()=>{if(confirm('Discard the saved walk?')){clearActiveQuest();$('resumeCard').classList.add('hidden')}};
 

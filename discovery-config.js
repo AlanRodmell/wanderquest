@@ -130,6 +130,37 @@
     return {places, errors, successCount};
   }
 
+  function serendipityProfile(value = 50) {
+    const level = Math.min(100, Math.max(0, Number(value) || 0));
+    const adventurousness = level / 100;
+    const label = level < 20 ? 'Familiar'
+      : level < 40 ? 'Gentle'
+        : level < 60 ? 'Balanced'
+          : level < 80 ? 'Adventurous'
+            : 'Wild card';
+    return {
+      level,
+      label,
+      proximityWeight:2.8 * (1 - adventurousness),
+      unusualWeight:2.6 * adventurousness,
+      randomWeight:.35 + adventurousness * 1.8,
+      surprisePool:Math.round(3 + adventurousness * 17)
+    };
+  }
+
+  function serendipityScore(place, distanceMetres, value = 50, randomValue = Math.random()) {
+    const profile = serendipityProfile(value);
+    const distance = Math.max(0, Number(distanceMetres) || 0);
+    const proximity = 1 - Math.min(1, distance / 5000);
+    const group = categoryGroupFromCategories(place?.categories || []);
+    let score = proximity * profile.proximityWeight + randomValue * profile.randomWeight;
+    if (group === 'curious') score += profile.unusualWeight * 1.35;
+    else if (['art','history','nature','activity'].includes(group)) score += profile.unusualWeight * .45;
+    if (place?.tags?.wikipedia) score += 1.2 - (profile.level / 100) * .35;
+    if (place?.name && place.name !== 'Local Discovery') score += .65;
+    return score;
+  }
+
   function isEndlessDestination(categories = []) {
     const linearWater = categories.some(category => [
       'natural.water.river_system',
@@ -171,6 +202,8 @@
     deduplicatePlaces,
     effectiveCandidateRadius,
     collectSuccessfulPlaceSearches,
+    serendipityProfile,
+    serendipityScore,
     isEndlessDestination,
     allCategoryIds,
     queryTokensForCategoryIds,

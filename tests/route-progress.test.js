@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 const {
   distanceRouteCheckpoints,
   checkpointArrivalRadius,
-  advanceDistanceCheckpoint
+  advanceDistanceCheckpoint,
+  routeCoordinates,
+  routeGuidance
 } = require('../route-progress.js');
 
 const origin = {lat:54.955,lon:-1.8803};
@@ -51,4 +53,27 @@ test('arrival radius accounts for GPS accuracy but remains bounded', () => {
   assert.equal(checkpointArrivalRadius({accuracy:5}), 80);
   assert.equal(checkpointArrivalRadius({accuracy:70}), 110);
   assert.equal(checkpointArrivalRadius({accuracy:500}), 150);
+});
+
+test('guided mode derives instructions, progress and off-route distance', () => {
+  const route = {
+    type:'FeatureCollection',
+    features:[{
+      geometry:{type:'LineString',coordinates:[[-1.8803,54.955],[-1.8793,54.955],[-1.8783,54.955]]},
+      properties:{
+        distance:200,
+        legs:[{steps:[
+          {from_index:0,to_index:1,instruction:{text:'Continue east'}},
+          {from_index:1,to_index:2,instruction:{text:'Turn right'}}
+        ]}]
+      }
+    }]
+  };
+  assert.equal(routeCoordinates(route).length,3);
+  const start=routeGuidance(route,{...origin,accuracy:5});
+  assert.equal(start.instruction,'Continue east');
+  assert.equal(start.progress,0);
+  assert.ok(start.remainingDistance>190);
+  const offRoute=routeGuidance(route,{lat:54.957,lon:-1.8793,accuracy:5});
+  assert.ok(offRoute.offRouteDistance>150);
 });

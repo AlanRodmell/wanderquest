@@ -32,6 +32,7 @@ walks and the discovery journal are also stored only in the current browser.
 
 - time-aware mystery walks that reserve an estimated return journey
 - adjustable destination categories for Mystery Walks
+- Serendipity Dial that shifts suggestions from nearby and familiar to unusual and bold
 - focused three-step mobile setup wizard for route, filters and duration
 - five-step How Far route builder with loop, there-and-back and point-to-point options
 - miles/kilometres targets, nearby-place waypoints, mapped previews and route regeneration
@@ -40,8 +41,10 @@ walks and the discovery journal are also stored only in the current browser.
 - Endless Discovery browser with activity, creative, food, culture, nature and history filters
 - on-device discovery journal and interrupted-walk resume
 - live location updates, walking routes and destination arrival checks
+- optional Guided Walk Mode with route cues, progress, off-route alerts, haptics and screen wake lock
 - manual re-routing from the user's latest GPS position
 - installable PWA shell with offline access to the home screen and journal
+- journal memories with favourites, ratings, personal notes and on-device photos
 - custom UI accent and contrasting map-route colours saved per device
 
 Map tiles, place searches, routing and Wikipedia enrichment still require a
