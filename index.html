@@ -18,7 +18,7 @@
   <button id="settingsToggle" class="dev-toggle" type="button">⚙️ SETTINGS</button>
   <div id="settingsPanel" class="dev-panel hidden">
     <h3>API Key Setup (Free)</h3>
-    <p>To prevent server crashes, WanderQuest relies on the commercial-grade <strong>Geoapify Places API</strong>. It pulls identical rich OpenStreetMap data, but is 100% stable.</p>
+    <p>WanderQuest uses the <strong>Geoapify Places API</strong> for nearby places and walking routes during this testing phase.</p>
     <p><a href="https://myprojects.geoapify.com/register" target="_blank" rel="noopener noreferrer" style="color:var(--acid);">Get a free API key here (No credit card required)</a>.</p>
     
     <div style="display:flex;gap:7px;margin-bottom:20px;margin-top:10px;">
@@ -149,7 +149,7 @@
 
 <section id="journal" class="screen journal hidden">
   <div class="screen-header"><button id="closeJournalBtn" class="round-back" aria-label="Close journal">←</button><div><span class="micro">Your wanderings</span><h2>Discovery journal</h2></div></div>
-  <p class="journal-intro">Places you reached are saved on this device. Location coordinates are never uploaded by WanderQuest.</p>
+  <p class="journal-intro">Places you reached are saved on this device. Your coordinates are sent directly to Geoapify for place searches and walking routes; map providers also receive tile requests.</p>
   <div id="journalList" class="journal-list"></div>
   <button id="clearJournalBtn" class="danger-btn hidden">CLEAR JOURNAL</button>
 </section>
@@ -211,6 +211,7 @@
 <script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate.js" crossorigin=""></script>
 
 <script src="./discovery-config.js"></script>
+<script src="./route-progress.js"></script>
 <script src="./app.js"></script>
 </body>
 </html>
