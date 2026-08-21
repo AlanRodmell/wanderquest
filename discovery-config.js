@@ -94,7 +94,8 @@
     const byId = new Set();
     const byName = new Map();
     const unique = [];
-    const ordered = [...places].sort((a, b) => (Number(a.dist) || Infinity) - (Number(b.dist) || Infinity));
+    const distanceValue = place => Number.isFinite(Number(place?.dist)) ? Number(place.dist) : Infinity;
+    const ordered = [...places].sort((a, b) => distanceValue(a) - distanceValue(b));
 
     ordered.forEach(place => {
       if (place.origId && byId.has(place.origId)) return;
@@ -106,6 +107,27 @@
       unique.push(place);
     });
     return unique;
+  }
+
+  function effectiveCandidateRadius(mode, requestedRadius, discoveryRange) {
+    const requested = Math.max(1, Number(requestedRadius) || 1);
+    if (mode !== 'just_walk') return requested;
+    return Math.max(requested, Math.max(1, Number(discoveryRange) || 1));
+  }
+
+  function collectSuccessfulPlaceSearches(settledResults = []) {
+    const places = [];
+    const errors = [];
+    let successCount = 0;
+    settledResults.forEach(result => {
+      if (result?.status === 'fulfilled' && Array.isArray(result.value)) {
+        successCount++;
+        places.push(...result.value);
+      } else if (result?.status === 'rejected') {
+        errors.push(result.reason);
+      }
+    });
+    return {places, errors, successCount};
   }
 
   function isEndlessDestination(categories = []) {
@@ -147,6 +169,8 @@
     ENDLESS_POI_CATEGORY_BATCHES,
     ENDLESS_POI_QUERY_TOKENS,
     deduplicatePlaces,
+    effectiveCandidateRadius,
+    collectSuccessfulPlaceSearches,
     isEndlessDestination,
     allCategoryIds,
     queryTokensForCategoryIds,

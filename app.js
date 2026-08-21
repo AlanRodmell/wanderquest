@@ -5,11 +5,17 @@ const {
   ENDLESS_POI_CATEGORY_BATCHES,
   ENDLESS_POI_QUERY_TOKENS,
   deduplicatePlaces,
+  effectiveCandidateRadius,
+  collectSuccessfulPlaceSearches,
   isEndlessDestination,
   allCategoryIds,
   queryTokensForCategoryIds,
   categoryGroupFromCategories
 } = globalThis.WanderQuestDiscovery;
+const {
+  distanceRouteCheckpoints,
+  advanceDistanceCheckpoint
+} = globalThis.WanderQuestRouteProgress;
 
 const STORAGE_KEYS = {
   apiKey: 'wq_geoapify_key',
@@ -85,7 +91,8 @@ const S = {
   distancePlace: null,
   distancePlaces: [],
   distancePlan: null,
-  distanceSeed: 0
+  distanceSeed: 0,
+  distanceCheckpointIndex: 0
 };
 
 let busy = false; let DEV_MODE = false; let DEV_LOCATION = {lat:53.4084,lon:-2.9916,accuracy:25};
@@ -93,6 +100,7 @@ let distancePreviewMap = null;
 let distancePreviewLayer = null;
 let distancePreviewMarker = null;
 let distanceGenerationController = null;
+let candidateSearchController = null;
 function guarded(fn){return async(...a)=>{if(busy)return;busy=true;try{await fn(...a)}finally{busy=false}}}
 const $ = id => document.getElementById(id);
 
@@ -229,7 +237,8 @@ function activeQuestSnapshot() {
     distanceShape: S.distanceShape,
     distanceAmount: S.distanceAmount,
     distanceUnit: S.distanceUnit,
-    distancePlan: S.mode === 'distance' ? S.distancePlan : null
+    distancePlan: S.mode === 'distance' ? S.distancePlan : null,
+    distanceCheckpointIndex: S.mode === 'distance' ? S.distanceCheckpointIndex : 0
   };
 }
 
@@ -639,7 +648,8 @@ function startLocationWatch() {
       accuracy: position.coords.accuracy
     };
     userMarker(S.user);
-    update();
+    if(S.mode==='distance')updateDistanceProgress(S.user);
+    else update();
   }, () => {}, {
     enableHighAccuracy: true,
     maximumAge: 5000,
@@ -781,7 +791,7 @@ function stopCompass() {
 }
 
 // GEOAPIFY FETCHING
-async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyTerrainFilter = true, namedOnly = false} = {}){
+async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyTerrainFilter = true, namedOnly = false, signal} = {}){
   const key = localStorage.getItem(STORAGE_KEYS.apiKey);
   if(!key) throw new Error('API key missing. Open settings to add it.');
 
@@ -793,6 +803,9 @@ async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyT
 
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 15000);
+  const abortFromParent = () => ctrl.abort();
+  if (signal?.aborted) ctrl.abort();
+  else signal?.addEventListener('abort', abortFromParent, {once:true});
 
   try {
     const res = await fetch(url, { signal: ctrl.signal });
@@ -801,7 +814,6 @@ async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyT
       throw new Error(`API Error ${res.status}: ${errData.message || 'Unknown server error'}`);
     }
     const data = await res.json();
-    clearTimeout(t);
 
     if (!data || data.type !== 'FeatureCollection' || !Array.isArray(data.features)) {
       throw new Error('Geoapify returned an unexpected Places response.');
@@ -839,8 +851,12 @@ async function geoapifySearch(p, r, {queryTokens = selectedQueryTokens(), applyT
     }).filter(Boolean);
 
   } catch(e) {
-    clearTimeout(t);
+    if(e.name==='AbortError'&&!signal?.aborted)throw new Error('Place search timed out. Check your connection and try again.');
+    if(e.name==='AbortError')throw e;
     throw new Error(e.message);
+  } finally {
+    clearTimeout(t);
+    signal?.removeEventListener('abort', abortFromParent);
   }
 }
 
@@ -1064,39 +1080,55 @@ function cacheValid(){
 }
 
 async function fetchCandidates(radius = BREADCRUMB_RADIUS){
- const searches = S.mode === 'just_walk'
-   ? [
-       // Start with the same focused categories as a default Mystery tour. Very
-       // broad category batches can hit Geoapify's result cap with map features
-       // before useful destinations such as museums and pubs are returned.
-       geoapifySearch(S.user, radius, {
-         queryTokens: queryTokensForCategoryIds(allCategoryIds()),
-         applyTerrainFilter: false,
-         namedOnly: true
-       }),
-       ...ENDLESS_POI_CATEGORY_BATCHES.map(queryTokens => geoapifySearch(S.user, radius, {
-         queryTokens,
-         applyTerrainFilter: false,
-         namedOnly: true
-       }))
-     ]
-   : [geoapifySearch(S.user, radius)];
- if (S.mode === 'just_walk') {
-   searches.push(geoapifySearch(S.user, IMMEDIATE_POI_RADIUS, {
-     queryTokens: ENDLESS_POI_QUERY_TOKENS,
-     applyTerrainFilter: false,
-     namedOnly: true
-   }));
+ if(candidateSearchController)candidateSearchController.abort();
+ const controller=new AbortController();
+ candidateSearchController=controller;
+ const searchRadius=effectiveCandidateRadius(S.mode,radius,S.discoveryRange);
+ try{
+   const searches = S.mode === 'just_walk'
+     ? [
+         // Start with the same focused categories as a default Mystery tour. Very
+         // broad category batches can hit Geoapify's result cap with map features
+         // before useful destinations such as museums and pubs are returned.
+         geoapifySearch(S.user, searchRadius, {
+           queryTokens: queryTokensForCategoryIds(allCategoryIds()),
+           applyTerrainFilter: false,
+           namedOnly: true,
+           signal:controller.signal
+         }),
+         ...ENDLESS_POI_CATEGORY_BATCHES.map(queryTokens => geoapifySearch(S.user, searchRadius, {
+           queryTokens,
+           applyTerrainFilter: false,
+           namedOnly: true,
+           signal:controller.signal
+         }))
+       ]
+     : [geoapifySearch(S.user, searchRadius, {signal:controller.signal})];
+   if (S.mode === 'just_walk') {
+     searches.push(geoapifySearch(S.user, IMMEDIATE_POI_RADIUS, {
+       queryTokens: ENDLESS_POI_QUERY_TOKENS,
+       applyTerrainFilter: false,
+       namedOnly: true,
+       signal:controller.signal
+     }));
+   }
+   const settled=await Promise.allSettled(searches);
+   if(controller.signal.aborted){const error=new Error('Search superseded.');error.name='AbortError';throw error}
+   const {places,errors,successCount}=collectSuccessfulPlaceSearches(settled);
+   if(!successCount)throw errors[0]||new Error('No place search completed successfully.');
+   S.candidates = deduplicatePlaces(places);
+   S.candidatesOrigin = {...S.user};
+   S.candidatesRadius = searchRadius;
+   if(errors.length)console.warn(`${errors.length} place search ${errors.length===1?'request':'requests'} failed; showing partial results.`);
+ }finally{
+   if(candidateSearchController===controller)candidateSearchController=null;
  }
- const results = await Promise.all(searches);
- S.candidates = deduplicatePlaces(results.flat());
- S.candidatesOrigin = S.user;
- S.candidatesRadius = radius;
 }
 
 function filterPool(items) {
   const min = 75; // Lowered from 200 so it doesn't skip nearby spots
-  const max = S.candidatesRadius || BREADCRUMB_RADIUS;
+  const fetchedRadius = S.candidatesRadius || BREADCRUMB_RADIUS;
+  const max = S.mode === 'just_walk' ? Math.min(fetchedRadius,S.discoveryRange) : fetchedRadius;
   const seen = new Set(S.used);
   return items
     .map(x => ({...x, dist: dist(S.user, x)}))
@@ -1237,13 +1269,15 @@ function renderDiscoveryBrowser() {
   $('discoveryRange').onchange = guarded(async event => {
     S.discoveryRange = Number(event.target.value);
     S.discoveryLimit = 8;
-    if (S.discoveryRange > (S.candidatesRadius || 0)) {
-      cardLoading();
-      await fetchCandidates(S.discoveryRange);
-      await processPool();
-    } else {
-      renderDiscoveryBrowser();
-    }
+    try{
+      if (S.discoveryRange > (S.candidatesRadius || 0)) {
+        cardLoading();
+        await fetchCandidates(S.discoveryRange);
+        await processPool();
+      } else {
+        renderDiscoveryBrowser();
+      }
+    }catch(e){if(e.name!=='AbortError')showError(e.message)}
   });
   document.querySelectorAll('[data-filter]').forEach(button => button.onclick = () => { S.discoveryFilter = button.dataset.filter; S.discoveryLimit = 8; renderDiscoveryBrowser(); });
   document.querySelectorAll('[data-discovery-index]').forEach(button => button.onclick = () => selectDiscoveryTarget(Number(button.dataset.discoveryIndex)));
@@ -1256,8 +1290,10 @@ function renderDiscoveryBrowser() {
     S.candidatesOrigin = null;
     S.discoveryLimit = 8;
     cardLoading();
-    await fetchCandidates(S.discoveryRange);
-    await processPool();
+    try{
+      await fetchCandidates(S.discoveryRange);
+      await processPool();
+    }catch(e){if(e.name!=='AbortError')showError(e.message)}
   });
   if ($('loadMoreBtn')) $('loadMoreBtn').onclick = () => { S.discoveryLimit += 8; renderDiscoveryBrowser(); };
   $('mapOnlyBtn').onclick = renderCompactBrowser;
@@ -1286,7 +1322,7 @@ async function expandSearch() {
     await fetchCandidates(newRadius);
     await processPool();
   } catch(e) {
-    showError(e.message);
+    if(e.name!=='AbortError')showError(e.message);
   }
 }
 
@@ -1301,6 +1337,12 @@ function showError(msg) {
 async function processPool() {
   let pool = filterPool(S.candidates);
   if (S.mode === 'mystery') pool = pool.filter(candidateFitsTimeBudget);
+
+  if(S.mode==='just_walk'&&!pool.length){
+    S.sortedPool=[];
+    renderDiscoveryBrowser();
+    return;
+  }
 
   if (S.mode === 'mystery' && S.discovered.length && shouldHeadHome()) {
     startReturnHome(false);
@@ -1461,7 +1503,7 @@ async function mystery(){
   if(!cacheValid()) await fetchCandidates(Math.round(BREADCRUMB_RADIUS * S.rangeMultiplier));
   await processPool();
  }catch(e){
-  showError(e.message);
+  if(e.name!=='AbortError')showError(e.message);
  }
 }
 
@@ -1495,16 +1537,69 @@ async function reroute(event){
  }
 }
 
-function distancePlanFinish(plan=S.distancePlan) {
- if(!plan)return null;
- return plan.shape==='point'?plan.points[plan.points.length-1]:plan.origin;
+function setDistancePlanMarkers(plan) {
+ const checkpoints=distanceRouteCheckpoints(plan);
+ const index=Math.max(0,Math.min(checkpoints.length,S.distanceCheckpointIndex));
+ const next=checkpoints[index]||checkpoints[checkpoints.length-1]||plan.origin;
+ S.target=next?{...next,name:next.label||'Route checkpoint',isHome:next.kind==='finish'&&plan.shape!=='point'}:null;
+ if(S.targetMarker){S.targetMarker.remove();S.targetMarker=null}
+ if(next)targetMarker(next);
 }
 
-function setDistancePlanMarkers(plan) {
- S.target={...distancePlanFinish(plan),name:plan.shape==='point'?(plan.place?.name||'Route finish'):'Starting point',isHome:plan.shape!=='point'};
- if(S.targetMarker){S.targetMarker.remove();S.targetMarker=null}
- const focus=previewFocusPoint(plan);
- if(focus&&dist(plan.origin,focus)>30)targetMarker({...focus,name:plan.place?.name||(plan.shape==='outback'?'Turnaround point':'Route waypoint')});
+function distanceProgressState(plan=S.distancePlan) {
+ const checkpoints=distanceRouteCheckpoints(plan);
+ const index=Math.max(0,Math.min(checkpoints.length,S.distanceCheckpointIndex));
+ return {checkpoints,index,next:checkpoints[index]||null,complete:index>=checkpoints.length};
+}
+
+function distanceProgressCopy(plan=S.distancePlan) {
+ const progress=distanceProgressState(plan);
+ if(progress.complete)return 'All route checkpoints reached. Complete the route when you are ready.';
+ const distance=S.user?` · ${fd(dist(S.user,progress.next))}`:'';
+ return `Checkpoint ${progress.index+1} of ${progress.checkpoints.length}: ${progress.next.label}${distance}`;
+}
+
+function updateDistanceProgressUi() {
+ const progress=distanceProgressState();
+ const status=$('distanceProgressText');
+ const finishButton=$('distanceFinishBtn');
+ if(status)status.textContent=distanceProgressCopy();
+ if(finishButton)finishButton.textContent=progress.complete?'COMPLETE':'CHECK IN';
+}
+
+function updateDistanceProgress(location,{notify=true}={}) {
+ if(S.mode!=='distance'||!S.distancePlan||!location)return distanceProgressState();
+ const result=advanceDistanceCheckpoint(S.distancePlan,S.distanceCheckpointIndex,location);
+ if(result.reached){
+   S.distanceCheckpointIndex=result.index;
+   setDistancePlanMarkers(S.distancePlan);
+   saveActiveQuest();
+   if(notify)toast(result.complete?'Final checkpoint reached. Route ready to complete.':`${result.reached.label} reached. Next checkpoint marked.`);
+ }
+ updateDistanceProgressUi();
+ return result;
+}
+
+async function finishDistanceRoute(event) {
+ const button=event?.currentTarget;
+ if(button)button.disabled=true;
+ try{
+   S.user=await pos(0);
+   userMarker(S.user);
+   const progress=updateDistanceProgress(S.user);
+   if(!progress.complete){
+     const next=progress.next||distanceProgressState().next;
+     const remaining=next?fd(dist(S.user,next)):null;
+     toast(next?`Reach ${next.label} first${remaining?` — ${remaining}`:''}.`:'Route progress is incomplete.');
+     if(next)S.map.flyTo([next.lat,next.lon],Math.max(S.map.getZoom(),15),{duration:.7});
+     return;
+   }
+   finish();
+ }catch(e){
+   toast(e.message||'Unable to verify your route progress.');
+ }finally{
+   if(button?.isConnected)button.disabled=false;
+ }
 }
 
 function applyDistancePlanToMap(plan) {
@@ -1521,30 +1616,33 @@ function renderDistanceNavigation() {
  const plan=S.distancePlan;
  if(!plan)return;
  const instruction=plan.shape==='loop'
-   ? 'Follow the route line to complete the loop back to your starting point.'
+   ? 'Follow the route line through each marked waypoint, then return to your starting point.'
    : plan.shape==='outback'
-     ? 'Follow the line to the turnaround point, then retrace it back to your start.'
+     ? 'Check in at the turnaround point, then retrace the line back to your start.'
      : `Follow the route line to ${plan.place?.name||'your finish point'}.`;
  $('bottomCard').className='bottom-card route-plan-card';
  $('bottomCard').innerHTML=`
    <div class="statusline"><span>How Far? · ${esc(distanceShapeLabel(plan.shape))}</span><div class="distance">${esc(formatRouteDistance(plan.distance))}</div></div>
    <h2 class="mystery-title">Your route is ready.</h2>
    <p class="mystery-copy">${esc(instruction)}</p>
+   <p class="mystery-copy" id="distanceProgressText">${esc(distanceProgressCopy(plan))}</p>
    <div class="route-plan-meta"><span>~${esc(durationLabel(Math.max(1,Math.round(plan.time/60))))}</span><span>${esc(S.terrain==='paved'?'Mostly paved':'Off-road / wild')}</span>${plan.place?`<span>${esc(plan.place.name)}</span>`:''}</div>
    <div class="actions navigation-actions distance-route-actions">
      <button class="locate" id="distanceLocateBtn">⌖ Locate</button>
      <button class="reroute" id="distanceRerouteBtn">↻ Re-route</button>
-     <button class="here" id="distanceFinishBtn">FINISH</button>
+     <button class="here" id="distanceFinishBtn">CHECK IN</button>
    </div>`;
  $('distanceLocateBtn').onclick=guarded(locateDistanceRoute);
  $('distanceRerouteBtn').onclick=guarded(rerouteDistanceRoute);
- $('distanceFinishBtn').onclick=()=>{if(confirm('Finish this route?'))finish()};
+ $('distanceFinishBtn').onclick=guarded(finishDistanceRoute);
+ updateDistanceProgressUi();
 }
 
 async function locateDistanceRoute() {
  try{
    S.user=await pos(0);
    userMarker(S.user);
+   updateDistanceProgress(S.user);
    S.map.flyTo([S.user.lat,S.user.lon],Math.max(S.map.getZoom(),16),{duration:.7});
  }catch(e){toast(e.message)}
 }
@@ -1554,12 +1652,14 @@ async function rerouteDistanceRoute(event) {
  const previous=button?.textContent;
  if(button){button.disabled=true;button.textContent='RE-ROUTING…'}
  const oldPlan=S.distancePlan;
+ const oldCheckpointIndex=S.distanceCheckpointIndex;
  const controller=new AbortController();
  try{
    const origin=await pos(0);
    const nextPlan=await buildDistancePlan(origin,controller.signal);
    S.distanceOrigin=origin;
    S.distancePlan=nextPlan;
+   S.distanceCheckpointIndex=0;
    S.startLoc={...origin};
    S.user={...origin};
    userMarker(S.user);
@@ -1569,6 +1669,7 @@ async function rerouteDistanceRoute(event) {
    toast('Distance route rebuilt from your current location.');
  }catch(e){
    S.distancePlan=oldPlan;
+   S.distanceCheckpointIndex=oldCheckpointIndex;
    toast(`${e.message} Your current route is unchanged.`);
  }finally{
    const current=$('distanceRerouteBtn');
@@ -1591,6 +1692,7 @@ async function startDistanceExperience() {
    }
    S.distanceOrigin={...S.distancePlan.origin};
    S.startLoc={...S.distancePlan.origin};
+   S.distanceCheckpointIndex=0;
    S.startedAt=Date.now();
    S.deadline=0;
    S.phase='distance_navigating';
@@ -1928,6 +2030,7 @@ async function resumeActiveQuest() {
     S.distanceAmount = Number(saved.distanceAmount) || 6;
     S.distanceUnit = saved.distanceUnit || 'mi';
     S.distancePlan = saved.distancePlan || null;
+    S.distanceCheckpointIndex = Math.max(0, Number(saved.distanceCheckpointIndex) || 0);
     S.distanceOrigin = saved.distancePlan?.origin || saved.startLoc || null;
     S.distancePlace = saved.distancePlan?.place || null;
     S.startLoc = saved.startLoc;

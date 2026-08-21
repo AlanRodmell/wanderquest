@@ -1,9 +1,10 @@
-const CACHE_NAME = 'wanderquest-shell-v14';
+const CACHE_NAME = 'wanderquest-shell-v15';
 const APP_SHELL = [
   './',
   './index.html',
   './styles.css',
   './discovery-config.js',
+  './route-progress.js',
   './app.js',
   './manifest.webmanifest',
   './icons/wanderquest-icon.svg',

@@ -9,6 +9,8 @@ const {
   ENDLESS_POI_CATEGORY_BATCHES,
   ENDLESS_POI_QUERY_TOKENS,
   deduplicatePlaces,
+  effectiveCandidateRadius,
+  collectSuccessfulPlaceSearches,
   isEndlessDestination,
   allCategoryIds,
   queryTokensForCategoryIds,
@@ -81,6 +83,32 @@ test('duplicate provider records collapse by name and nearby coordinates', () =>
   assert.deepEqual(unique.map(place => place.origId), ['poi','tower','other-branch']);
 });
 
+test('deduplication preserves a destination at the current position', () => {
+  const unique = deduplicatePlaces([
+    {name:'Clock Tower',lat:55,lon:-1.8,origId:'at-user',dist:0},
+    {name:'Clock Tower',lat:55.00005,lon:-1.8,origId:'nearby-copy',dist:8}
+  ]);
+  assert.deepEqual(unique.map(place => place.origId), ['at-user']);
+});
+
+test('Endless fetches at least the range advertised by its browser', () => {
+  assert.equal(effectiveCandidateRadius('just_walk', 1500, 2000), 2000);
+  assert.equal(effectiveCandidateRadius('just_walk', 5000, 2000), 5000);
+  assert.equal(effectiveCandidateRadius('mystery', 1500, 5000), 1500);
+});
+
+test('partial place-search failures keep successful result batches', () => {
+  const failure = new Error('rate limited');
+  const collected = collectSuccessfulPlaceSearches([
+    {status:'fulfilled',value:[{name:'Museum'}]},
+    {status:'rejected',reason:failure},
+    {status:'fulfilled',value:[{name:'Park'},{name:'Cafe'}]}
+  ]);
+  assert.deepEqual(collected.places.map(place => place.name), ['Museum','Park','Cafe']);
+  assert.deepEqual(collected.errors, [failure]);
+  assert.equal(collected.successCount, 2);
+});
+
 test('raw river-system line segments are not Endless destinations', () => {
   assert.equal(isEndlessDestination(['natural.water.river_system','waterway','waterway.river_system']), false);
   assert.equal(isEndlessDestination(['natural.water.river_system','tourism.attraction']), true);
@@ -91,6 +119,9 @@ test('Endless discovery defaults to nearest and does not exclude close candidate
   const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
   assert.match(source, /discoverySort: 'nearest'/);
   assert.match(source, /ENDLESS_POI_CATEGORY_BATCHES\.map/);
+  assert.match(source, /Promise\.allSettled\(searches\)/);
+  assert.match(source, /effectiveCandidateRadius\(S\.mode,radius,S\.discoveryRange\)/);
+  assert.match(source, /S\.mode==='just_walk'&&!pool\.length/);
   assert.match(source, /queryTokens: queryTokensForCategoryIds\(allCategoryIds\(\)\)/);
   assert.match(source, /namedOnly: true/);
   assert.match(source, /if \(namedOnly && !explicitName\) return null/);
