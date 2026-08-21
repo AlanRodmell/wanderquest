@@ -398,12 +398,23 @@ renderCategoryFilters();
 
 function renderExperienceControls() {
   const profile=serendipityProfile(S.serendipity);
+  const descriptions={
+    Familiar:'Keep discoveries close, easy and recognisable.',
+    Gentle:'Stay nearby with the occasional left-field find.',
+    Balanced:'A balanced mix of nearby and unexpected.',
+    Adventurous:'Range wider for places with more personality.',
+    'Wild card':'Prioritise unusual finds and bigger surprises.'
+  };
   $('serendipityDial').value=String(profile.level);
-  $('serendipityValue').textContent=`${profile.label} · ${profile.level}`;
+  document.querySelector('.walk-tuning').style.setProperty('--serendipity-fill',`${profile.level}%`);
+  $('serendipityDial').setAttribute('aria-valuetext',profile.label);
+  $('serendipityValue').textContent=profile.label;
+  $('serendipityDescription').textContent=descriptions[profile.label];
   $('guidedModeToggle').classList.toggle('selected',S.guidedMode);
   $('guidedModeToggle').setAttribute('aria-pressed',String(S.guidedMode));
-  $('guidedModeStatus').textContent=S.guidedMode?'ON':'OFF';
-  $('guidedTop').style.color=S.guidedMode?'var(--acid)':'';
+  $('guidedModeStatus').textContent=S.guidedMode?'On':'Off';
+  $('guidedTop').classList.toggle('selected',S.guidedMode);
+  $('guidedTop').setAttribute('aria-pressed',String(S.guidedMode));
 }
 
 $('serendipityDial').oninput=event=>{
@@ -638,9 +649,12 @@ function esc(s=''){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt
 
 function guidancePanelHtml() {
   return `<div id="guidancePanel" class="guidance-panel ${S.guidedMode?'':'hidden'}" aria-live="polite">
-    <div class="guidance-head"><span id="guidanceKicker">Guided walk</span><b id="guidanceProgress">0%</b></div>
-    <strong id="guidanceInstruction">Finding your position on the route…</strong>
-    <small id="guidanceMeta"></small>
+    <div class="guidance-main">
+      <span class="guidance-direction" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m7 17 10-10M8 7h9v9"></path></svg></span>
+      <span class="guidance-copy"><small id="guidanceKicker">Next cue</small><strong id="guidanceInstruction">Finding your route…</strong></span>
+      <b id="guidanceCueDistance">—</b>
+    </div>
+    <div class="guidance-status"><small id="guidanceMeta">Waiting for route</small><span id="guidanceProgress">0%</span></div>
     <div class="guidance-progress"><i id="guidanceProgressBar"></i></div>
   </div>`;
 }
@@ -656,10 +670,12 @@ function updateGuidance(location=S.user) {
   if(!S.guidedMode)return;
   const guidance=routeGuidance(S.routeData,location);
   if(!guidance){
-    $('guidanceKicker').textContent='Guided walk';
-    $('guidanceInstruction').textContent='Building route guidance…';
-    $('guidanceMeta').textContent='Compass and map remain available.';
-    $('guidanceProgress').textContent='—';
+    panel.classList.remove('off-route');
+    $('guidanceKicker').textContent='Live guidance';
+    $('guidanceInstruction').textContent='Finding your route…';
+    $('guidanceCueDistance').textContent='—';
+    $('guidanceMeta').textContent='Waiting for route';
+    $('guidanceProgress').textContent='0%';
     $('guidanceProgressBar').style.width='0%';
     return;
   }
@@ -667,9 +683,10 @@ function updateGuidance(location=S.user) {
   const offRoute=guidance.offRouteDistance>threshold;
   const percent=Math.round(guidance.progress*100);
   panel.classList.toggle('off-route',offRoute);
-  $('guidanceKicker').textContent=offRoute?`Off route · ${compactDistance(guidance.offRouteDistance)}`:'Guided walk';
+  $('guidanceKicker').textContent=offRoute?'Off route':'Next cue';
   $('guidanceInstruction').textContent=offRoute?'Return to the highlighted route.':guidance.instruction;
-  $('guidanceMeta').textContent=`${compactDistance(guidance.distanceToCue)} to cue · ${compactDistance(guidance.remainingDistance)} remaining`;
+  $('guidanceCueDistance').textContent=offRoute?compactDistance(guidance.offRouteDistance):compactDistance(guidance.distanceToCue);
+  $('guidanceMeta').textContent=`${compactDistance(guidance.remainingDistance)} remaining`;
   $('guidanceProgress').textContent=`${percent}%`;
   $('guidanceProgressBar').style.width=`${percent}%`;
   if(offRoute&&!S.offRouteAlerted){
@@ -1384,14 +1401,21 @@ async function renderJournal() {
     ensureJournalEntryId(place);
     return {place,index};
   }).reverse();
-  $('journalList').innerHTML = entries.length ? entries.map(({place,index}) => `
-    <article class="journal-item" data-journal-entry="${index}">
+  $('journalList').innerHTML = entries.length ? entries.map(({place,index}) => {
+    const rating=Math.max(0,Math.min(5,Math.round(Number(place.rating)||0)));
+    const discoveryMode=place.questMode==='just_walk'?'Endless':'Mystery';
+    const serendipity=Number.isFinite(Number(place.serendipity))?serendipityProfile(place.serendipity).label:null;
+    return `<article class="journal-item ${place.hasPhoto?'has-photo':''}" data-journal-entry="${index}">
       <img class="journal-card-photo hidden" data-journal-photo="${esc(place.entryId)}" alt="Photo from ${esc(place.name||'this discovery')}">
-      <div class="journal-item-head"><b>${esc(place.name || 'Local discovery')}</b><time>${esc(formatJournalDate(place.discoveredAt))}</time></div>
-      <div class="journal-tags"><span class="journal-tag">${esc(categoryLabel(place))}</span><span class="journal-tag">${place.questMode === 'just_walk' ? 'Endless' : 'Mystery'}</span>${Number.isFinite(Number(place.serendipity))?`<span class="journal-tag">${esc(serendipityProfile(place.serendipity).label)}</span>`:''}${place.givenUp ? '<span class="journal-tag">Revealed</span>' : ''}${place.rating?`<span class="journal-tag journal-stars">${'★'.repeat(place.rating)}</span>`:''}</div>
-      <p>${esc(place.note || place.cachedDesc || blurb(place))}</p>
-      <div class="journal-item-actions"><button class="journal-favourite ${place.favourite?'active':''}" data-journal-favourite="${index}" type="button" aria-label="${place.favourite?'Remove from':'Add to'} favourites" aria-pressed="${Boolean(place.favourite)}">${place.favourite?'♥':'♡'}</button><button class="journal-edit-btn" data-journal-edit="${index}" type="button">${place.note||place.rating||place.hasPhoto?'EDIT MEMORY':'ADD MEMORY'}</button></div>
-    </article>`).join('') : '<div class="journal-empty">No discoveries yet. Complete a destination and it will appear here.</div>';
+      <div class="journal-card-body">
+        <div class="journal-card-meta"><span>${esc(categoryLabel(place))}</span><i></i><time>${esc(formatJournalDate(place.discoveredAt))}</time></div>
+        <div class="journal-title-row"><b>${esc(place.name || 'Local discovery')}</b><button class="journal-favourite ${place.favourite?'active':''}" data-journal-favourite="${index}" type="button" aria-label="${place.favourite?'Remove from':'Add to'} favourites" aria-pressed="${Boolean(place.favourite)}">${place.favourite?'♥':'♡'}</button></div>
+        <div class="journal-card-details">${rating?`<span class="journal-card-rating" aria-label="${rating} out of 5 stars"><b>${'★'.repeat(rating)}</b>${'★'.repeat(5-rating)}</span>`:''}<span>${esc(discoveryMode)}${place.givenUp?' · Revealed':''}</span>${serendipity?`<span class="journal-serendipity">✦ ${esc(serendipity)}</span>`:''}</div>
+        <p>${esc(place.note || place.cachedDesc || blurb(place))}</p>
+        <button class="journal-edit-btn" data-journal-edit="${index}" type="button">${place.note||rating||place.hasPhoto?'Edit memory':'Add a memory'} <span>→</span></button>
+      </div>
+    </article>`;
+  }).join('') : '<div class="journal-empty">No discoveries yet. Complete a destination and it will appear here.</div>';
   if(migrated)saveHistory();
   $('clearJournalBtn').classList.toggle('hidden', !entries.length);
   document.querySelectorAll('[data-journal-edit]').forEach(button=>button.onclick=()=>openJournalEditor(Number(button.dataset.journalEdit)));
@@ -1404,9 +1428,10 @@ async function renderJournal() {
   });
   await Promise.all(entries.filter(({place})=>place.hasPhoto).map(async({place})=>{
     const blob=await getJournalPhoto(place.entryId);
-    if(!blob||token!==journalRenderToken)return;
+    if(token!==journalRenderToken)return;
     const image=document.querySelector(`[data-journal-photo="${CSS.escape(place.entryId)}"]`);
     if(!image)return;
+    if(!blob){image.closest('.journal-item')?.classList.remove('has-photo');return}
     const url=URL.createObjectURL(blob);
     journalObjectUrls.push(url);
     image.src=url;
@@ -1422,12 +1447,13 @@ function renderJournalEditorRating() {
   });
   $('journalFavouriteBtn').classList.toggle('active',journalEditorFavourite);
   $('journalFavouriteBtn').setAttribute('aria-pressed',String(journalEditorFavourite));
-  $('journalFavouriteBtn').textContent=journalEditorFavourite?'♥ FAVOURITE':'♡ ADD TO FAVOURITES';
+  $('journalFavouriteBtn').textContent=journalEditorFavourite?'♥ Favourite':'♡ Favourite';
 }
 
 function showJournalEditorPhoto(blob) {
   if(editorPhotoUrl)URL.revokeObjectURL(editorPhotoUrl);
   editorPhotoUrl=blob?URL.createObjectURL(blob):null;
+  $('journalPhotoPicker').classList.toggle('has-photo',Boolean(blob));
   $('journalPhotoPreview').classList.toggle('hidden',!blob);
   $('removeJournalPhotoBtn').classList.toggle('hidden',!blob);
   $('journalPhotoPreviewImg').src=editorPhotoUrl||'';
@@ -1446,9 +1472,12 @@ async function openJournalEditor(index) {
   $('journalNoteInput').value=place.note||'';
   $('journalPhotoInput').value='';
   renderJournalEditorRating();
-  $('journalEditor').classList.remove('hidden');
-  showJournalEditorPhoto(place.hasPhoto?await getJournalPhoto(place.entryId):null);
-  $('journalEditor').scrollIntoView({behavior:'smooth',block:'start'});
+  $('journalEditorBackdrop').classList.remove('hidden');
+  document.body.classList.add('journal-editor-open');
+  const photo=place.hasPhoto?await getJournalPhoto(place.entryId):null;
+  if(S.editingJournalIndex!==index)return;
+  showJournalEditorPhoto(photo);
+  $('closeJournalEditorBtn').focus({preventScroll:true});
 }
 
 function closeJournalEditor() {
@@ -1456,7 +1485,8 @@ function closeJournalEditor() {
   pendingJournalPhoto=null;
   removePendingJournalPhoto=false;
   showJournalEditorPhoto(null);
-  $('journalEditor').classList.add('hidden');
+  $('journalEditorBackdrop').classList.add('hidden');
+  document.body.classList.remove('journal-editor-open');
 }
 
 function openJournal() {
@@ -1479,6 +1509,8 @@ document.querySelectorAll('[data-journal-rating]').forEach(button=>button.onclic
 });
 $('journalFavouriteBtn').onclick=()=>{journalEditorFavourite=!journalEditorFavourite;renderJournalEditorRating()};
 $('closeJournalEditorBtn').onclick=closeJournalEditor;
+$('journalEditorBackdrop').onclick=event=>{if(event.target===$('journalEditorBackdrop'))closeJournalEditor()};
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&S.editingJournalIndex>=0)closeJournalEditor()});
 $('journalPhotoInput').onchange=async event=>{
   const file=event.target.files?.[0];
   if(!file)return;
