@@ -82,13 +82,19 @@
         <button class="option selected" data-terrain="paved"><b>Mostly Paved & Urban</b><small>Prefers streets and surfaced paths; local route data may vary.</small></button>
         <button class="option" data-terrain="any"><b>Off-Road / Wild</b><small>Includes overgrown tracks and nature reserves.</small></button>
       </div>
-      <div class="experience-controls">
+      <div class="walk-tuning" aria-labelledby="walkTuningTitle">
+        <div class="walk-tuning-head"><span id="walkTuningTitle">Walk feel</span><small>Make the route yours</small></div>
         <label class="serendipity-control" for="serendipityDial">
-          <span><b>Serendipity Dial</b><output id="serendipityValue" for="serendipityDial">Balanced · 50</output></span>
+          <span class="serendipity-control-head"><span><b>Serendipity</b><small id="serendipityDescription">A balanced mix of nearby and unexpected.</small></span><output id="serendipityValue" for="serendipityDial">Balanced</output></span>
           <input id="serendipityDial" type="range" min="0" max="100" step="5" value="50">
-          <small><span>Closer &amp; familiar</span><span>Unexpected &amp; bold</span></small>
+          <span class="serendipity-scale" aria-hidden="true"><span>Familiar</span><span>Surprising</span></span>
         </label>
-        <button id="guidedModeToggle" class="guided-mode-toggle" type="button" aria-pressed="true"><span>◎ Guided Walk Mode</span><small>Live route cues, off-route alerts, haptics and screen wake lock.</small><b id="guidedModeStatus">ON</b></button>
+        <button id="guidedModeToggle" class="guided-mode-toggle" type="button" aria-pressed="true">
+          <span class="guided-mode-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.25"></circle></svg></span>
+          <span class="guided-mode-copy"><b>Live guidance</b><small>Turn cues and gentle off-route alerts</small></span>
+          <span class="guided-mode-switch" aria-hidden="true"><i></i></span>
+          <span id="guidedModeStatus" class="sr-only">On</span>
+        </button>
       </div>
     </section>
 
@@ -157,18 +163,26 @@
 
 <section id="journal" class="screen journal hidden">
   <div class="screen-header"><button id="closeJournalBtn" class="round-back" aria-label="Close journal">←</button><div><span class="micro">Your wanderings</span><h2>Discovery journal</h2></div></div>
-  <p class="journal-intro">Places you reached are saved on this device. Your coordinates are sent directly to Geoapify for place searches and walking routes; map providers also receive tile requests.</p>
+  <p class="journal-intro">A private scrapbook of the places you found. Memories and photos stay on this device.</p>
   <div id="journalList" class="journal-list"></div>
-  <section id="journalEditor" class="journal-editor hidden" aria-labelledby="journalEditorTitle">
-    <div class="journal-editor-head"><div><span class="micro">Memory details</span><h3 id="journalEditorTitle">Edit discovery</h3></div><button id="closeJournalEditorBtn" type="button" aria-label="Close editor">×</button></div>
-    <div id="journalPhotoPreview" class="journal-photo-preview hidden"><img id="journalPhotoPreviewImg" alt="Selected discovery memory"></div>
-    <div class="journal-photo-actions"><label class="secondary-btn" for="journalPhotoInput">ADD PHOTO<input id="journalPhotoInput" class="sr-only" type="file" accept="image/*" capture="environment"></label><button id="removeJournalPhotoBtn" class="secondary-btn hidden" type="button">REMOVE PHOTO</button></div>
-    <label class="journal-field"><span>Personal note</span><textarea id="journalNoteInput" rows="4" maxlength="600" placeholder="What made this place memorable?"></textarea></label>
-    <fieldset class="journal-rating"><legend>How was this discovery?</legend><div id="journalRatingButtons"><button type="button" data-journal-rating="1" aria-label="1 star">★</button><button type="button" data-journal-rating="2" aria-label="2 stars">★</button><button type="button" data-journal-rating="3" aria-label="3 stars">★</button><button type="button" data-journal-rating="4" aria-label="4 stars">★</button><button type="button" data-journal-rating="5" aria-label="5 stars">★</button></div></fieldset>
-    <button id="journalFavouriteBtn" class="journal-favourite-edit" type="button" aria-pressed="false">♡ ADD TO FAVOURITES</button>
-    <button id="saveJournalEntryBtn" class="primary" type="button">SAVE MEMORY</button>
-  </section>
-  <button id="clearJournalBtn" class="danger-btn hidden">CLEAR JOURNAL</button>
+  <button id="clearJournalBtn" class="journal-clear hidden">Clear journal</button>
+  <div id="journalEditorBackdrop" class="journal-editor-backdrop hidden">
+    <section id="journalEditor" class="journal-editor" role="dialog" aria-modal="true" aria-labelledby="journalEditorTitle">
+      <div class="journal-editor-grip" aria-hidden="true"></div>
+      <div class="journal-editor-head"><div><span class="micro">Add to your journal</span><h3 id="journalEditorTitle">Edit discovery</h3></div><button id="closeJournalEditorBtn" type="button" aria-label="Close editor">×</button></div>
+      <div class="journal-photo-field">
+        <label id="journalPhotoPicker" class="journal-photo-picker" for="journalPhotoInput">
+          <input id="journalPhotoInput" class="sr-only" type="file" accept="image/*" capture="environment">
+          <span id="journalPhotoPreview" class="journal-photo-preview hidden"><img id="journalPhotoPreviewImg" alt="Selected discovery memory"></span>
+          <span class="journal-photo-empty"><b>＋ Add a photo</b><small>Keep the moment with the memory</small></span>
+        </label>
+        <button id="removeJournalPhotoBtn" class="journal-photo-remove hidden" type="button">Remove photo</button>
+      </div>
+      <label class="journal-field"><span>Your note</span><textarea id="journalNoteInput" rows="3" maxlength="600" placeholder="What made this place memorable?"></textarea></label>
+      <fieldset class="journal-rating"><legend>Rate this discovery</legend><div id="journalRatingButtons"><button type="button" data-journal-rating="1" aria-label="1 star">★</button><button type="button" data-journal-rating="2" aria-label="2 stars">★</button><button type="button" data-journal-rating="3" aria-label="3 stars">★</button><button type="button" data-journal-rating="4" aria-label="4 stars">★</button><button type="button" data-journal-rating="5" aria-label="5 stars">★</button></div></fieldset>
+      <div class="journal-editor-actions"><button id="journalFavouriteBtn" class="journal-favourite-edit" type="button" aria-pressed="false">♡ Favourite</button><button id="saveJournalEntryBtn" class="primary" type="button">SAVE MEMORY</button></div>
+    </section>
+  </div>
 </section>
 
 <section id="walk" class="screen walk hidden">
@@ -177,7 +191,7 @@
     <div class="topbar">
       <div class="pill" id="historyPill"><b id="modeLabel">MYSTERY</b> <span id="stopCountText">· STOP 1 / 5</span> <span id="timeRemainingText"></span></div>
       <div class="top-actions">
-        <button class="iconbtn" id="guidedTop" aria-label="Toggle guided walk mode" title="Guided Walk Mode">◎</button>
+        <button class="iconbtn guided-top" id="guidedTop" aria-label="Toggle guided walk mode" aria-pressed="true" title="Guided Walk Mode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z"></path><circle cx="12" cy="10" r="2.25"></circle></svg></button>
         <button class="iconbtn" id="rotateTop" aria-label="Rotate Map" title="Enable/Disable Auto-Rotation">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
         </button>
