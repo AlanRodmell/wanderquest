@@ -5,6 +5,8 @@ const {
   ENDLESS_POI_CATEGORY_BATCHES,
   ENDLESS_POI_QUERY_TOKENS,
   deduplicatePlaces,
+  placeKey,
+  excludeCompletedPlaces,
   effectiveCandidateRadius,
   collectSuccessfulPlaceSearches,
   serendipityProfile,
@@ -1275,15 +1277,9 @@ function filterPool(items) {
   const fetchedRadius = S.candidatesRadius || BREADCRUMB_RADIUS;
   const max = S.mode === 'just_walk' ? Math.min(fetchedRadius,S.discoveryRange) : fetchedRadius;
   const seen = new Set(S.used);
-  return items
+  return excludeCompletedPlaces(items, S.journal)
     .map(x => ({...x, dist: dist(S.user, x)}))
     .filter(x => (S.mode === 'just_walk' || x.dist >= min) && x.dist <= max && !seen.has(placeKey(x)));
-}
-
-function placeKey(place) {
-  if (place?.origId) return place.origId;
-  if (Number.isFinite(place?.lat) && Number.isFinite(place?.lon)) return `${place.lat.toFixed(5)},${place.lon.toFixed(5)}`;
-  return String(place?.name || 'unknown-place').toLowerCase();
 }
 
 function categoryGroup(place) {
@@ -1572,8 +1568,7 @@ function sortCandidates(clean) {
 }
 
 function discoveryResults() {
-  const visited = new Set(S.journal.map(placeKey));
-  let results = (S.sortedPool || [])
+  let results = excludeCompletedPlaces(S.sortedPool || [], S.journal)
     .map(place => ({...place, dist: dist(S.user, place)}))
     .filter(place => !S.used.has(placeKey(place)))
     .filter(place => place.dist <= S.discoveryRange)
@@ -1582,7 +1577,7 @@ function discoveryResults() {
   if (S.discoverySort === 'nearest') results.sort((a, b) => a.dist - b.dist);
   if (S.discoverySort === 'unusual') {
     results.sort((a, b) => {
-      const score = place => (place.tags?.wikipedia ? 2 : 0) + (categoryGroup(place) === 'curious' ? 2 : 0) + (visited.has(placeKey(place)) ? -5 : 0);
+      const score = place => (place.tags?.wikipedia ? 2 : 0) + (categoryGroup(place) === 'curious' ? 2 : 0);
       return score(b) - score(a) || a.dist - b.dist;
     });
   }
@@ -1596,15 +1591,13 @@ function renderDiscoveryBrowser() {
   const results = discoveryResults();
   const visible = results.slice(0, S.discoveryLimit);
   S.visibleDiscoveries = visible;
-  const visited = new Set(S.journal.map(placeKey));
   const filters = DISCOVERY_FILTERS;
 
   const items = visible.map((place, index) => {
     const name = place.name === 'Local Discovery' ? 'Hidden local gem' : place.name;
     const direction = compass(bearing(S.user, place));
-    const wasVisited = visited.has(placeKey(place));
     return `<button class="discovery-item" data-discovery-index="${index}">
-      <span><b>${esc(name)}</b><small>${esc(categoryLabel(place))} · ${direction}${wasVisited ? ' · <span class="visited">Visited</span>' : ''}</small></span>
+      <span><b>${esc(name)}</b><small>${esc(categoryLabel(place))} · ${direction}</small></span>
       <span class="discovery-distance">${fd(place.dist).replace(' away','')}<small>~${estimatedWalkMinutes(place.dist)} min</small></span>
     </button>`;
   }).join('');
