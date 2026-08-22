@@ -9,6 +9,9 @@ const {
   ENDLESS_POI_CATEGORY_BATCHES,
   ENDLESS_POI_QUERY_TOKENS,
   deduplicatePlaces,
+  placeKey,
+  completedPlaceKeys,
+  excludeCompletedPlaces,
   effectiveCandidateRadius,
   collectSuccessfulPlaceSearches,
   serendipityProfile,
@@ -91,6 +94,35 @@ test('deduplication preserves a destination at the current position', () => {
     {name:'Clock Tower',lat:55.00005,lon:-1.8,origId:'nearby-copy',dist:8}
   ]);
   assert.deepEqual(unique.map(place => place.origId), ['at-user']);
+});
+
+test('completed discoveries are excluded but Give Up reveals remain eligible', () => {
+  const completed = {name:'Old Mill',origId:'old-mill',givenUp:false};
+  const legacyCompleted = {name:'Clock Tower',lat:55.00001,lon:-1.80001};
+  const revealed = {name:'Hidden Garden',origId:'hidden-garden',givenUp:true};
+  const newPlace = {name:'New Place',origId:'new-place'};
+  const journal = [completed, legacyCompleted, revealed];
+  const candidates = [
+    {...completed},
+    {...legacyCompleted},
+    {...revealed},
+    newPlace
+  ];
+
+  assert.deepEqual([...completedPlaceKeys(journal)], [
+    'old-mill',
+    placeKey(legacyCompleted)
+  ]);
+  assert.deepEqual(
+    excludeCompletedPlaces(candidates, journal).map(placeKey),
+    ['hidden-garden','new-place']
+  );
+});
+
+test('completed discovery filtering uses stable provider, coordinate and name keys', () => {
+  assert.equal(placeKey({origId:'provider-id',name:'Ignored'}), 'provider-id');
+  assert.equal(placeKey({lat:55.123456,lon:-1.987654}), '55.12346,-1.98765');
+  assert.equal(placeKey({name:'Local Landmark'}), 'local landmark');
 });
 
 test('Endless fetches at least the range advertised by its browser', () => {

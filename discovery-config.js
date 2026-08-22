@@ -109,6 +109,25 @@
     return unique;
   }
 
+  function placeKey(place) {
+    if (place?.origId) return String(place.origId);
+    if (Number.isFinite(place?.lat) && Number.isFinite(place?.lon)) {
+      return `${place.lat.toFixed(5)},${place.lon.toFixed(5)}`;
+    }
+    return String(place?.name || 'unknown-place').toLowerCase();
+  }
+
+  function completedPlaceKeys(journal = []) {
+    return new Set(journal
+      .filter(place => place && place.givenUp !== true)
+      .map(placeKey));
+  }
+
+  function excludeCompletedPlaces(places = [], journal = []) {
+    const completed = completedPlaceKeys(journal);
+    return places.filter(place => !completed.has(placeKey(place)));
+  }
+
   function effectiveCandidateRadius(mode, requestedRadius, discoveryRange) {
     const requested = Math.max(1, Number(requestedRadius) || 1);
     if (mode !== 'just_walk') return requested;
@@ -200,6 +219,9 @@
     ENDLESS_POI_CATEGORY_BATCHES,
     ENDLESS_POI_QUERY_TOKENS,
     deduplicatePlaces,
+    placeKey,
+    completedPlaceKeys,
+    excludeCompletedPlaces,
     effectiveCandidateRadius,
     collectSuccessfulPlaceSearches,
     serendipityProfile,
