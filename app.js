@@ -318,7 +318,7 @@ function setDevLocation(p,label,buttonId){
 }
 $('realLocationBtn').onclick=()=>{DEV_MODE=false;document.querySelectorAll('#settingsPanel .dev-row button').forEach(b=>b.classList.remove('active'));$('realLocationBtn').classList.add('active');if(!$('walk').classList.contains('hidden'))startLocationWatch();toast('Real GPS enabled')};
 $('neLocationBtn').onclick=()=>setDevLocation({lat:54.955014,lon:-1.880329,accuracy:25},'NE43 7DL','neLocationBtn');
-$('londonLocationBtn').onclick=()=>setDevLocation({lat:51.5074,lon:-0.1278,accuracy:25},'London','londonLocationBtn');
+$('pragueLocationBtn').onclick=()=>setDevLocation({lat:50.0755,lon:14.4378,accuracy:25},'Prague','pragueLocationBtn');
 
 // Options selection
 function selectOption(selector, selected) {
