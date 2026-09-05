@@ -105,7 +105,7 @@ const S = {
   editingJournalIndex: -1
 };
 
-let busy = false; let DEV_MODE = false; let DEV_LOCATION = {lat:53.4084,lon:-2.9916,accuracy:25};
+let busy = false; let DEV_MODE = false; let DEV_LOCATION = {lat:50.0828,lon:14.4548,accuracy:25};
 let distancePreviewMap = null;
 let distancePreviewLayer = null;
 let distancePreviewMarker = null;
